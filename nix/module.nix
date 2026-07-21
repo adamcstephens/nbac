@@ -195,9 +195,6 @@ in
         UserKnownHostsFile ${cfg.stateDir}/known_hosts
         StrictHostKeyChecking yes
         ProxyCommand ${lib.getExe cfg.package} --config /etc/nbac/config.toml proxy
-        ControlMaster auto
-        ControlPath /tmp/nbac-ssh-%i-%C
-        ControlPersist 60
     '';
 
     nix.distributedBuilds = true;

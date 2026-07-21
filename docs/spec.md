@@ -155,8 +155,13 @@ The number-one performance complaint about hex-box's `hb`/proxy chain.
   writes progress chatter to stdout under parallel load, corrupting the
   stream (observed as nix "protocol mismatch, got 'started…'"). TCP is also
   ~75 ms faster per connection (~110 ms vs ~185 ms).
-- SSH client config keeps `ControlMaster auto` / `ControlPersist` so Nix's
-  many connections share one transport.
+- The SSH client config must **not** set `ControlMaster`/`ControlPersist`:
+  Nix verifies every connection by reading a `LocalCommand echo started`
+  sentinel as the first line of ssh stdout, and config-level multiplexing
+  makes that sentinel appear zero times (mux clients) or twice (the
+  persisted master) — observed as "failed to start SSH connection" and
+  "protocol mismatch, got 'started'". Nix's `SSHMaster` already shares
+  connections over its own private control sockets.
 
 ## Default image
 
