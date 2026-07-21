@@ -6,4 +6,9 @@ PasswordAuthentication no
 KbdInteractiveAuthentication no
 AuthorizedKeysFile .ssh/authorized_keys
 UseDNS no
+# Nix opens bursts of parallel connections from one source address; the
+# default MaxStartups drops part of the burst and per-source penalties then
+# lock the address out entirely.
+MaxStartups 64
+PerSourcePenalties no
 Subsystem sftp internal-sftp

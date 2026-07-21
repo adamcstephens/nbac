@@ -145,25 +145,29 @@ pub fn cmd_ssh(config_path: &Path, args: &[String]) -> Result<()> {
 pub fn cmd_proxy(config_path: &Path) -> Result<()> {
     let config = Config::load(config_path)?;
     let runtime = Runtime::new(&config);
-    if !fast_path_ready(&runtime, &config) {
-        ensure_ready(&runtime, &config)?;
-    }
-    let err = runtime.exec_stdio_transport(&config.machine.name, config.ssh.port);
-    Err(anyhow::Error::new(err).context("cannot exec the container transport"))
+    let ip = match fast_path_ip(&runtime, &config) {
+        Some(ip) => ip,
+        None => {
+            ensure_ready(&runtime, &config)?;
+            runtime
+                .machine_inspect(&config.machine.name)?
+                .and_then(|info| info.ip_address)
+                .context("machine is running but reports no IP address")?
+        }
+    };
+    let err = Runtime::exec_tcp_transport(&ip, config.ssh.port);
+    Err(anyhow::Error::new(err).context("cannot exec the transport"))
 }
 
-/// One inspect, no lock, no polling: running machine whose image matches the
-/// stored generation marker means the transport can be exec'd immediately.
-fn fast_path_ready(runtime: &Runtime, config: &Config) -> bool {
-    let Ok(marker) = std::fs::read_to_string(config.state.generation_marker()) else {
-        return false;
-    };
+/// One inspect, no lock, no polling: a running machine whose image matches
+/// the stored generation marker can be connected to immediately.
+fn fast_path_ip(runtime: &Runtime, config: &Config) -> Option<String> {
+    let marker = std::fs::read_to_string(config.state.generation_marker()).ok()?;
     let tag = format!("{}:{}", config.image.tag_prefix, marker.trim());
-    matches!(
-        runtime.machine_inspect(&config.machine.name),
-        Ok(Some(info)) if info.status == MachineStatus::Running
-            && machine::reference_matches(&info.image.reference, &tag)
-    )
+    let info = runtime.machine_inspect(&config.machine.name).ok()??;
+    (info.status == MachineStatus::Running
+        && machine::reference_matches(&info.image.reference, &tag))
+    .then_some(info.ip_address)?
 }
 
 pub fn cmd_doctor(_config: &Path, _fix: bool) -> Result<()> {

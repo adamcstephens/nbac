@@ -250,22 +250,14 @@ impl Runtime {
         })
     }
 
-    /// Replace this process with the stdio transport into the guest's sshd.
+    /// Replace this process with a TCP transport to the guest's sshd. Plain
+    /// nc, not `machine run … socat`: the container CLI writes progress
+    /// chatter to stdout under load, which corrupts an stdio transport.
     /// Only returns on exec failure.
-    pub fn exec_stdio_transport(&self, name: &str, port: u16) -> std::io::Error {
-        self.command(&[
-            "machine",
-            "run",
-            "--root",
-            "--name",
-            name,
-            "--interactive",
-            "--",
-            "socat",
-            "STDIO",
-            &format!("TCP:127.0.0.1:{port}"),
-        ])
-        .exec()
+    pub fn exec_tcp_transport(ip: &str, port: u16) -> std::io::Error {
+        Command::new("/usr/bin/nc")
+            .args([ip, &port.to_string()])
+            .exec()
     }
 
     /// The one shared recovery routine: if a call fails because the

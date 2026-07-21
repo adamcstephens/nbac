@@ -147,11 +147,14 @@ The number-one performance complaint about hex-box's `hb`/proxy chain.
   machine if missing or generation mismatch → boot → inject keys/settings
   (single guest exec) → wait for sshd with a loop *inside* the guest (one VM
   exec total, not thirty host-side probes) → exec transport.
-- Transport: stdio into the guest (`container machine run … socat STDIO
-  TCP:127.0.0.1:<port>`), preserving the no-stable-IP property. Benchmarked
-  in phase 3: direct machine-IP TCP is ~75 ms faster per connection (~110 ms
-  vs ~185 ms) but the machine IP changes on every boot, so stdio stays;
-  `ControlMaster` amortizes the difference across Nix's connections.
+- Transport: plain TCP (`nc`) to the machine's host-only vmnet address and
+  the guest sshd port, with the IP resolved fresh on every connection from
+  `machine inspect` — machine IPs change across boots, but nothing persists
+  them, so the no-stable-IP property holds. An stdio transport through
+  `container machine run … socat` was tried first and rejected: the CLI
+  writes progress chatter to stdout under parallel load, corrupting the
+  stream (observed as nix "protocol mismatch, got 'started…'"). TCP is also
+  ~75 ms faster per connection (~110 ms vs ~185 ms).
 - SSH client config keeps `ControlMaster auto` / `ControlPersist` so Nix's
   many connections share one transport.
 
@@ -226,8 +229,11 @@ The module's `containerPackage` option (default `null`) can instead install
 - Host key pinned via generated `known_hosts`; `StrictHostKeyChecking yes`.
 - Guest user has passwordless sudo for exactly one command:
   `nix-daemon --stdio`.
-- No published ports; the only ingress is the stdio transport initiated from
-  the host.
+- No published ports; the guest sshd is reachable only on the host-only
+  vmnet interface, and connections are initiated from the host. sshd raises
+  `MaxStartups` and disables `PerSourcePenalties`: Nix opens bursts of
+  parallel connections from one source address, which the OpenSSH defaults
+  drop and then lock out.
 - Image built locally from a readable Containerfile with checksum-verified
   inputs.
 
@@ -296,7 +302,7 @@ comes from the system install by default (see module section).
 | Activation scripts | None; `nbac setup` + lazy cold path |
 | Nix implementation in guest | Upstream Nix (static tarball), not Lix |
 | Guest init | s6 (`s6-svscan` as PID 1, plain-sh run scripts); considered a bespoke script (bad PID 1) and OpenRC (boot manager we don't need) |
-| Transport | stdio via `machine run … socat`; direct-IP TCP measured faster but machine IPs are unstable across boots |
+| Transport | TCP via `nc` to the machine IP, resolved per connection from `machine inspect`; stdio via `machine run … socat` rejected (CLI progress chatter corrupts the stream under parallel load) |
 | Apple `container` | System-installed binary from PATH; opt-in `containerPackage` module option for `pkgs.container` |
 | Module target | nix-darwin only |
 | Async runtime | None |
