@@ -31,7 +31,7 @@ fn ensure_ready(runtime: &Runtime, config: &Config) -> Result<String> {
 
 pub fn cmd_setup(config: &Path) -> Result<()> {
     let config = Config::load(config)?;
-    let runtime = Runtime::new(&config.runtime);
+    let runtime = Runtime::new(&config);
     let tag = ensure_ready(&runtime, &config)?;
     ui::success(&format!(
         "machine {} is running image {tag}",
@@ -42,7 +42,7 @@ pub fn cmd_setup(config: &Path) -> Result<()> {
 
 pub fn cmd_start(config: &Path) -> Result<()> {
     let config = Config::load(config)?;
-    let runtime = Runtime::new(&config.runtime);
+    let runtime = Runtime::new(&config);
     ensure_ready(&runtime, &config)?;
     ui::success(&format!("machine {} is running", config.machine.name));
     Ok(())
@@ -50,7 +50,7 @@ pub fn cmd_start(config: &Path) -> Result<()> {
 
 pub fn cmd_stop(config: &Path) -> Result<()> {
     let config = Config::load(config)?;
-    let runtime = Runtime::new(&config.runtime);
+    let runtime = Runtime::new(&config);
     let _lock = lock::acquire(&config.state.lock_file())?;
     runtime.machine_stop(&config.machine.name)?;
     ui::success(&format!("machine {} stopped", config.machine.name));
@@ -67,7 +67,7 @@ pub fn cmd_reset(config: &Path) -> Result<()> {
         bail!("aborted");
     }
 
-    let runtime = Runtime::new(&config.runtime);
+    let runtime = Runtime::new(&config);
     ensure_services(&runtime)?;
     {
         let _lock = lock::acquire(&config.state.lock_file())?;
@@ -144,7 +144,7 @@ pub fn cmd_ssh(config_path: &Path, args: &[String]) -> Result<()> {
 
 pub fn cmd_proxy(config_path: &Path) -> Result<()> {
     let config = Config::load(config_path)?;
-    let runtime = Runtime::new(&config.runtime);
+    let runtime = Runtime::new(&config);
     if !fast_path_ready(&runtime, &config) {
         ensure_ready(&runtime, &config)?;
     }

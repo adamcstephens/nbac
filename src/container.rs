@@ -68,12 +68,43 @@ pub enum MachineStatus {
 
 pub struct Runtime {
     binary: String,
+    asuser: Option<u32>,
 }
 
 impl Runtime {
-    pub fn new(config: &config::Runtime) -> Self {
+    pub fn new(config: &config::Config) -> Self {
         Self {
-            binary: config.container_binary.clone(),
+            binary: resolve(&config.runtime.container_binary),
+            asuser: asuser_uid(&config.state.dir),
+        }
+    }
+
+    /// The `container` runtime is a per-user launchd agent reached over XPC,
+    /// but nix-daemon runs distributed builds (and thus the SSH
+    /// ProxyCommand) as root. Re-enter the owning user's bootstrap namespace
+    /// and drop to that user; the state directory's owner is that user.
+    fn command(&self, args: &[&str]) -> Command {
+        match self.asuser {
+            Some(uid) => {
+                let mut cmd = Command::new("/bin/launchctl");
+                cmd.args(["asuser", &uid.to_string()])
+                    .args([
+                        "/usr/bin/sudo",
+                        "--user",
+                        &format!("#{uid}"),
+                        "--set-home",
+                        "--non-interactive",
+                        "--",
+                    ])
+                    .arg(&self.binary)
+                    .args(args);
+                cmd
+            }
+            None => {
+                let mut cmd = Command::new(&self.binary);
+                cmd.args(args);
+                cmd
+            }
         }
     }
 
@@ -194,8 +225,8 @@ impl Runtime {
                 "--",
                 "sh",
             ];
-            let mut child = Command::new(&rt.binary)
-                .args(args)
+            let mut child = rt
+                .command(&args)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -222,20 +253,19 @@ impl Runtime {
     /// Replace this process with the stdio transport into the guest's sshd.
     /// Only returns on exec failure.
     pub fn exec_stdio_transport(&self, name: &str, port: u16) -> std::io::Error {
-        Command::new(&self.binary)
-            .args([
-                "machine",
-                "run",
-                "--root",
-                "--name",
-                name,
-                "--interactive",
-                "--",
-                "socat",
-                "STDIO",
-                &format!("TCP:127.0.0.1:{port}"),
-            ])
-            .exec()
+        self.command(&[
+            "machine",
+            "run",
+            "--root",
+            "--name",
+            name,
+            "--interactive",
+            "--",
+            "socat",
+            "STDIO",
+            &format!("TCP:127.0.0.1:{port}"),
+        ])
+        .exec()
     }
 
     /// The one shared recovery routine: if a call fails because the
@@ -268,8 +298,8 @@ impl Runtime {
 
     /// Run to completion, capturing output and classifying failures.
     fn output(&self, args: &[&str]) -> Result<Output, Error> {
-        let output = Command::new(&self.binary)
-            .args(args)
+        let output = self
+            .command(args)
             .stdin(Stdio::null())
             .output()
             .map_err(|source| Error::Spawn {
@@ -286,8 +316,8 @@ impl Runtime {
     /// Run with stdout/stderr streamed to the user, for long operations
     /// (image builds, machine creation) whose progress matters.
     fn streamed(&self, args: &[&str]) -> Result<(), Error> {
-        let status = Command::new(&self.binary)
-            .args(args)
+        let status = self
+            .command(args)
             .stdin(Stdio::null())
             .status()
             .map_err(|source| Error::Spawn {
@@ -316,6 +346,31 @@ impl Runtime {
     fn command_line(&self, args: &[&str]) -> String {
         format!("{} {}", self.binary, args.join(" "))
     }
+}
+
+fn asuser_uid(state_dir: &Path) -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    if !rustix::process::geteuid().is_root() {
+        return None;
+    }
+    let uid = std::fs::metadata(state_dir).ok()?.uid();
+    (uid != 0).then_some(uid)
+}
+
+/// sudo's env_reset and the daemon's minimal PATH both lose the caller's
+/// PATH, so pin the binary to an absolute path up front.
+fn resolve(binary: &str) -> String {
+    if binary.contains('/') {
+        return binary.into();
+    }
+    std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|dir| dir.join(binary))
+        .find(|candidate| candidate.is_file())
+        .map(|found| found.to_string_lossy().into_owned())
+        .unwrap_or_else(|| binary.into())
 }
 
 fn classify(command: String, output: &Output) -> Error {

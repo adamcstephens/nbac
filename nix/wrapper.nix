@@ -15,11 +15,10 @@ runCommand "nbac"
   }
   ''
     mkdir -vp $out/bin/
-    makeWrapper ${lib.getExe nbac-unwrapped} $out/bin/nbac --prefix PATH : ${
-      lib.makeBinPath [
-        # Add runtime tool dependencies here, e.g. pkgs.git
-      ]
-    }
+    # nix-daemon's PATH lacks /usr/local/bin, where Apple `container` lives,
+    # and the ProxyCommand runs under the daemon for distributed builds.
+    makeWrapper ${lib.getExe nbac-unwrapped} $out/bin/nbac \
+      --suffix PATH : /usr/local/bin
 
     installShellCompletion --cmd nbac \
       --bash <(COMPLETE=bash $out/bin/nbac) \

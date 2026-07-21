@@ -19,10 +19,14 @@ pub fn ensure(config: &Config) -> Result<()> {
     generate_keypair(&config.state.host_key(), "nbac host key")?;
 
     let host_pub = std::fs::read_to_string(config.state.host_key_pub())?;
-    std::fs::write(
-        config.state.known_hosts(),
-        format!("{} {}", config.ssh.host_alias, host_pub),
-    )?;
+    let entry = format!("{} {}", config.ssh.host_alias, host_pub);
+    let path = config.state.known_hosts();
+    // Skip the rewrite when unchanged: the proxy cold path may run as root,
+    // and a root-owned file here would break later user-side writes.
+    if std::fs::read_to_string(&path).is_ok_and(|current| current == entry) {
+        return Ok(());
+    }
+    std::fs::write(&path, entry)?;
     Ok(())
 }
 

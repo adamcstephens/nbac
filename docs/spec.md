@@ -278,6 +278,11 @@ comes from the system install by default (see module section).
 - `machine create` returns before the guest is bootable; a `machine run` in
   that window fails transiently ("Inappropriate ioctl for device"), handled
   by bounded backoff in the container wrapper.
+- The `container` runtime is a per-user launchd agent (Mach/XPC service in
+  the user's bootstrap namespace), but nix-daemon runs the ProxyCommand as
+  root. When nbac runs with euid 0 it wraps every `container` invocation in
+  `launchctl asuser <uid> sudo --user #<uid> --set-home`, deriving the uid
+  from the state directory's owner.
 
 ## Decision log
 
