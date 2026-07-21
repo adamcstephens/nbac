@@ -67,14 +67,11 @@ pub fn ensure_machine(runtime: &Runtime, config: &Config, tag: &str) -> Result<(
 /// Written only after key injection succeeds, so the proxy fast path never
 /// short-circuits into a machine without keys.
 pub fn write_generation_marker(config: &Config, tag: &str) -> Result<()> {
-    let generation = tag.rsplit(':').next().unwrap();
-    let path = config.state.generation_marker();
-    // Skip the rewrite when unchanged: the proxy cold path may run as root,
-    // and a root-owned file here would break later user-side writes.
-    if std::fs::read_to_string(&path).is_ok_and(|current| current == generation) {
-        return Ok(());
-    }
-    std::fs::write(&path, generation).context("cannot write generation marker")
+    crate::fsutil::replace(
+        &config.state.generation_marker(),
+        tag.rsplit(':').next().unwrap(),
+    )
+    .context("cannot write generation marker")
 }
 
 /// Apply cpus/memory changes with `machine set` instead of recreating.

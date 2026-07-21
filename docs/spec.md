@@ -147,14 +147,17 @@ The number-one performance complaint about hex-box's `hb`/proxy chain.
   machine if missing or generation mismatch → boot → inject keys/settings
   (single guest exec) → wait for sshd with a loop *inside* the guest (one VM
   exec total, not thirty host-side probes) → exec transport.
-- Transport: plain TCP (`nc`) to the machine's host-only vmnet address and
-  the guest sshd port, with the IP resolved fresh on every connection from
-  `machine inspect` — machine IPs change across boots, but nothing persists
-  them, so the no-stable-IP property holds. An stdio transport through
-  `container machine run … socat` was tried first and rejected: the CLI
-  writes progress chatter to stdout under parallel load, corrupting the
-  stream (observed as nix "protocol mismatch, got 'started…'"). TCP is also
-  ~75 ms faster per connection (~110 ms vs ~185 ms).
+- Transport: plain TCP to the machine's host-only vmnet address and the
+  guest sshd port, exec'ing Apple-signed `/usr/bin/nc -G 3`. The IP comes
+  from the guest itself — the injection exec reports it and nbac records it
+  in the state dir — because `machine inspect` keeps returning the boot-time
+  allocation, which goes stale when the machine reboots in place. The fast
+  path probes reachability (`nc -z -G 3`) and falls back to the cold path,
+  which re-injects and re-records. Two rejected alternatives: an stdio
+  transport through `container machine run … socat` (~75 ms slower per
+  connection), and an in-process Rust relay — macOS Local Network privacy
+  silently blackholes connects from unsigned binaries in ungrantable
+  contexts, and a nix-built binary's TCC identity changes every rebuild.
 - The SSH client config must **not** set `ControlMaster`/`ControlPersist`:
   Nix verifies every connection by reading a `LocalCommand echo started`
   sentinel as the first line of ssh stdout, and config-level multiplexing
@@ -294,6 +297,17 @@ comes from the system install by default (see module section).
   root. When nbac runs with euid 0 it wraps every `container` invocation in
   `launchctl asuser <uid> sudo --user #<uid> --set-home`, deriving the uid
   from the state directory's owner.
+- `machine inspect`'s `ipAddress` reflects the boot-time allocation and goes
+  stale when the machine reboots in place (observed: inspect reporting .2
+  while the guest held .3). The guest's own view, captured during
+  injection, is authoritative.
+- The vmnet NAT dataplane can wedge (observed: guest outbound TCP
+  blackholed while UDP DNS worked, after repeated hard poweroffs).
+  Recovery: restart the container services; a `doctor --fix` candidate for
+  phase 4, along with checking guest-side external reachability.
+- macOS Local Network privacy (macOS 15+) silently drops in-process
+  connects to vmnet addresses from unsigned binaries in contexts without a
+  grant; Apple-signed `/usr/bin/nc` is exempt, hence the exec'd transport.
 
 ## Decision log
 

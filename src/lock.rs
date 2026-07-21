@@ -11,6 +11,10 @@ pub struct Lock {
 }
 
 pub fn acquire(path: &Path) -> Result<Lock> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("cannot create state directory {}", dir.display()))?;
+    }
     let file = File::options()
         .create(true)
         .truncate(false)

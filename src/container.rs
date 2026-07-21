@@ -1,7 +1,6 @@
 //! Typed wrapper around the Apple `container` CLI (verified against 1.1.0).
 
 use std::io::Write;
-use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Output, Stdio};
 
@@ -207,13 +206,14 @@ impl Runtime {
         self.recovering(|rt| rt.streamed(&args))
     }
 
-    /// Run a shell script inside the machine, fed through stdin: the one
-    /// guest exec the cold path uses to inject keys and settings.
-    pub fn machine_run_piped(&self, name: &str, script: &str) -> Result<(), Error> {
+    /// Run a shell script inside the machine, fed through stdin, returning
+    /// its stdout: the one guest exec the cold path uses to inject keys and
+    /// settings.
+    pub fn machine_run_piped(&self, name: &str, script: &str) -> Result<String, Error> {
         self.while_booting(|rt| rt.machine_run_piped_once(name, script))
     }
 
-    fn machine_run_piped_once(&self, name: &str, script: &str) -> Result<(), Error> {
+    fn machine_run_piped_once(&self, name: &str, script: &str) -> Result<String, Error> {
         self.recovering(|rt| {
             let args = [
                 "machine",
@@ -243,21 +243,11 @@ impl Runtime {
                 source,
             })?;
             if output.status.success() {
-                Ok(())
+                Ok(String::from_utf8_lossy(&output.stdout).into_owned())
             } else {
                 Err(classify(rt.command_line(&args), &output))
             }
         })
-    }
-
-    /// Replace this process with a TCP transport to the guest's sshd. Plain
-    /// nc, not `machine run … socat`: the container CLI writes progress
-    /// chatter to stdout under load, which corrupts an stdio transport.
-    /// Only returns on exec failure.
-    pub fn exec_tcp_transport(ip: &str, port: u16) -> std::io::Error {
-        Command::new("/usr/bin/nc")
-            .args([ip, &port.to_string()])
-            .exec()
     }
 
     /// The one shared recovery routine: if a call fails because the

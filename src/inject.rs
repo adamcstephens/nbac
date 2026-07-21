@@ -6,12 +6,20 @@ use anyhow::{Context, Result};
 use crate::config::Config;
 use crate::container::Runtime;
 
+/// Injects keys and settings, and records the guest's own view of its IP:
+/// `machine inspect` keeps reporting the boot-time allocation, which goes
+/// stale when the machine reboots in place.
 pub fn inject(runtime: &Runtime, config: &Config) -> Result<()> {
     let script = script(config)?;
-    runtime
+    let output = runtime
         .machine_run_piped(&config.machine.name, &script)
         .context("key injection failed")?;
-    Ok(())
+    let ip = output
+        .lines()
+        .find_map(|line| line.strip_prefix("NBAC_GUEST_IP="))
+        .filter(|ip| !ip.is_empty())
+        .context("injection did not report the guest IP")?;
+    crate::fsutil::replace(&config.state.guest_ip(), ip)
 }
 
 fn script(config: &Config) -> Result<String> {
@@ -49,11 +57,14 @@ for _ in $(seq 1 100); do
 done
 s6-svc -ru /run/service/sshd
 for _ in $(seq 1 100); do
-    [ -n "$(ss -Htln "sport = :{port}")" ] && exit 0
+    [ -n "$(ss -Htln "sport = :{port}")" ] && break
     sleep 0.1
 done
-echo "sshd is not listening on port {port}" >&2
-exit 1
+if [ -z "$(ss -Htln "sport = :{port}")" ]; then
+    echo "sshd is not listening on port {port}" >&2
+    exit 1
+fi
+echo "NBAC_GUEST_IP=$(ip -4 -o addr show dev eth0 | sed -n 's|.*inet \([0-9.]*\).*|\1|p' | head -1)"
 "#
     ))
 }
