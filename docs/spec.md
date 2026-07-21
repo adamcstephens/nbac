@@ -224,7 +224,7 @@ writing) — no pkg installers, no version grepping.
 
 Approved crates (latest versions checked at add time): `clap` (derive +
 `clap_complete`), `serde`, `toml`, `serde_json`, `anyhow`, `thiserror`,
-`rustix` (flock). No async runtime — process orchestration is sequential;
+`rustix` (flock), `console` (styled terminal output). No async runtime — process orchestration is sequential;
 `status` concurrency uses `std::thread`.
 
 Nix side: `nixpkgs` (`pkgs.container`, `rustPlatform.buildRustPackage`),
@@ -233,8 +233,9 @@ Nix side: `nixpkgs` (`pkgs.container`, `rustPlatform.buildRustPackage`),
 ## Development phases
 
 1. **Scaffold** — flake (Rust package, dev shell, checks, formatter), Cargo
-   skeleton with stubbed subcommands and config types, empty module, CI
-   (build + clippy + fmt + module eval).
+   skeleton with stubbed subcommands and config types, empty module, flake
+   checks (build + clippy + fmt + module eval); a CI workflow is deferred
+   until a forge is chosen.
 2. **Core** — config loading; typed `container` wrapper (JSON parsing, error
    taxonomy, one shared recovery routine); image build with generation
    tagging; machine lifecycle; key management.
@@ -271,3 +272,4 @@ Nix side: `nixpkgs` (`pkgs.container`, `rustPlatform.buildRustPackage`),
 | Apple `container` | `pkgs.container` from nixpkgs |
 | Module target | nix-darwin only |
 | Async runtime | None |
+| CI | `nix flake check` only until a forge is chosen |

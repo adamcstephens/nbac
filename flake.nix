@@ -3,6 +3,11 @@
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable-small";
 
     flake-parts.url = "github:hercules-ci/flake-parts";
+
+    nix-darwin = {
+      url = "github:nix-darwin/nix-darwin";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -14,8 +19,24 @@
         "aarch64-darwin"
       ];
 
+      flake.darwinModules = rec {
+        default = nbac;
+        nbac = ./nix/module.nix;
+      };
+
       perSystem =
-        { pkgs, ... }:
+        {
+          pkgs,
+          lib,
+          system,
+          ...
+        }:
+        let
+          nbac-unwrapped = pkgs.callPackage ./nix/package.nix { };
+          nbac = pkgs.callPackage ./nix/wrapper.nix {
+            inherit nbac-unwrapped;
+          };
+        in
         {
           devShells.default = pkgs.mkShell {
             packages = [
@@ -30,14 +51,62 @@
             ];
           };
 
-          packages = rec {
+          formatter = pkgs.nixfmt;
+
+          packages = {
             default = nbac;
+            inherit nbac nbac-unwrapped;
+          };
 
-            nbac = pkgs.callPackage ./nix/wrapper.nix {
-              inherit nbac-unwrapped;
-            };
+          checks = {
+            build = nbac;
 
-            nbac-unwrapped = pkgs.callPackage ./nix/package.nix { };
+            clippy = nbac-unwrapped.overrideAttrs (old: {
+              pname = "nbac-clippy";
+              nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.clippy ];
+              buildPhase = ''
+                runHook preBuild
+                cargo clippy --all-targets -- --deny warnings
+                runHook postBuild
+              '';
+              doCheck = false;
+              installPhase = "touch $out";
+              doInstallCheck = false;
+            });
+
+            formatting =
+              pkgs.runCommand "nbac-formatting"
+                {
+                  nativeBuildInputs = [
+                    pkgs.cargo
+                    pkgs.rustfmt
+                    pkgs.nixfmt
+                  ];
+                }
+                ''
+                  cd ${inputs.self}
+                  HOME=$TMPDIR cargo fmt --check
+                  nixfmt --check $(find . -name '*.nix')
+                  touch $out
+                '';
+          }
+          // lib.optionalAttrs (system == "aarch64-darwin") {
+            module-eval =
+              let
+                darwin = inputs.nix-darwin.lib.darwinSystem {
+                  modules = [
+                    inputs.self.darwinModules.default
+                    {
+                      services.nbac.enable = true;
+                      nixpkgs.hostPlatform = "aarch64-darwin";
+                      system.stateVersion = 6;
+                    }
+                  ];
+                };
+              in
+              pkgs.runCommand "nbac-module-eval" {
+                toplevel = builtins.unsafeDiscardStringContext darwin.config.system.build.toplevel.drvPath;
+              } "echo $toplevel > $out";
           };
         };
     };
