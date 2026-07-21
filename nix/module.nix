@@ -121,6 +121,7 @@ in
 
     stateDir = lib.mkOption {
       type = lib.types.str;
+      default = "${config.system.primaryUserHome}/.local/state/nbac";
       example = "/Users/me/.local/state/nbac";
       description = ''
         Directory for keys, known_hosts, the generation marker, and the lock.
