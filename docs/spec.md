@@ -227,7 +227,8 @@ The module's `containerPackage` option (default `null`) can instead install
 
 Approved crates (latest versions checked at add time): `clap` (derive +
 `clap_complete`), `serde`, `toml`, `serde_json`, `anyhow`, `thiserror`,
-`rustix` (flock), `console` (styled terminal output). No async runtime — process orchestration is sequential;
+`rustix` (flock), `sha2` (generation hashing), `console` (styled terminal
+output). No async runtime — process orchestration is sequential;
 `status` concurrency uses `std::thread`.
 
 Nix side: `nixpkgs` (`rustPlatform.buildRustPackage`), `nix-darwin` for

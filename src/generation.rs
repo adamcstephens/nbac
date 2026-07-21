@@ -4,9 +4,9 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use sha2::{Digest, Sha256};
 
 use crate::config::Config;
-use crate::hash::{Sha256, hex};
 
 pub fn compute(config: &Config) -> Result<String> {
     let mut hasher = Sha256::new();
@@ -28,7 +28,11 @@ pub fn compute(config: &Config) -> Result<String> {
     hash_field(&mut hasher, "ssh.user", config.ssh.user.as_bytes());
     hash_field(&mut hasher, "ssh.port", &config.ssh.port.to_be_bytes());
 
-    let digest = hex(&hasher.finalize());
+    let digest: String = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     Ok(digest[..12].to_string())
 }
 
@@ -39,7 +43,7 @@ pub fn image_tag(config: &Config) -> Result<String> {
 fn hash_field(hasher: &mut Sha256, name: &str, value: &[u8]) {
     hasher.update(name.as_bytes());
     hasher.update(b"\0");
-    hasher.update(&(value.len() as u64).to_be_bytes());
+    hasher.update((value.len() as u64).to_be_bytes());
     hasher.update(value);
 }
 
