@@ -194,7 +194,8 @@ passed straight to `nix.buildMachines` (`systems`, `maxJobs`, `speedFactor`,
 The module:
 
 - renders `environment.etc."nbac/config.toml"`,
-- adds `nbac` and `pkgs.container` to `environment.systemPackages`,
+- adds `nbac` (and `containerPackage` when set) to
+  `environment.systemPackages`,
 - sets `nix.distributedBuilds`, `nix.settings.builders-use-substitutes`, and
   `nix.buildMachines` (SSH key path under `stateDir`),
 - writes the SSH client config for the host alias via
@@ -205,8 +206,10 @@ It does **not** use `system.activationScripts`. After enabling the module the
 user runs `nbac setup` once (or just triggers a build and lets the cold path
 do it).
 
-Apple `container` comes from nixpkgs (`pkgs.container`, 1.1.0 at time of
-writing) — no pkg installers, no version grepping.
+Apple `container` is expected to be installed system-wide (Apple's signed
+pkg or the Homebrew cask; 1.1.0 at time of writing) and resolved from PATH.
+The module's `containerPackage` option (default `null`) can instead install
+`pkgs.container` once it is validated end to end.
 
 ## Security model
 
@@ -227,8 +230,9 @@ Approved crates (latest versions checked at add time): `clap` (derive +
 `rustix` (flock), `console` (styled terminal output). No async runtime — process orchestration is sequential;
 `status` concurrency uses `std::thread`.
 
-Nix side: `nixpkgs` (`pkgs.container`, `rustPlatform.buildRustPackage`),
-`nix-darwin` for module testing. Target platform `aarch64-darwin` only.
+Nix side: `nixpkgs` (`rustPlatform.buildRustPackage`), `nix-darwin` for
+module testing. Target platform `aarch64-darwin` only. Apple `container`
+comes from the system install by default (see module section).
 
 ## Development phases
 
@@ -252,7 +256,7 @@ Nix side: `nixpkgs` (`pkgs.container`, `rustPlatform.buildRustPackage`),
 
 - Confirm `pkgs.container` works end to end without Apple's pkg installer
   (entitlements/codesigning, `container system start`, kernel install on
-  first use).
+  first use) before recommending `containerPackage = pkgs.container`.
 - Confirm what `container machine` exposes for file injection (mounts vs a
   single guest exec) and for machine IPs (transport alternative).
 - Confirm `machine set` semantics for cpus/memory changes on an existing
@@ -269,7 +273,7 @@ Nix side: `nixpkgs` (`pkgs.container`, `rustPlatform.buildRustPackage`),
 | Image | No published artifact; local build from provided or user Containerfile |
 | Activation scripts | None; `nbac setup` + lazy cold path |
 | Nix implementation in guest | Upstream Nix (static tarball), not Lix |
-| Apple `container` | `pkgs.container` from nixpkgs |
+| Apple `container` | System-installed binary from PATH; opt-in `containerPackage` module option for `pkgs.container` |
 | Module target | nix-darwin only |
 | Async runtime | None |
 | CI | `nix flake check` only until a forge is chosen |

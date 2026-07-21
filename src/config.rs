@@ -1,5 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use anyhow::{Context, Result};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -15,6 +16,14 @@ pub struct Config {
     pub idle: Idle,
     #[serde(default)]
     pub runtime: Runtime,
+}
+
+impl Config {
+    pub fn load(path: &Path) -> Result<Self> {
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("cannot read config file {}", path.display()))?;
+        toml::from_str(&text).with_context(|| format!("cannot parse {}", path.display()))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,6 +79,36 @@ impl Default for Ssh {
 #[serde(deny_unknown_fields)]
 pub struct State {
     pub dir: PathBuf,
+}
+
+impl State {
+    pub fn builder_key(&self) -> PathBuf {
+        self.dir.join("builder_ed25519")
+    }
+
+    pub fn builder_key_pub(&self) -> PathBuf {
+        self.dir.join("builder_ed25519.pub")
+    }
+
+    pub fn host_key(&self) -> PathBuf {
+        self.dir.join("ssh_host_ed25519_key")
+    }
+
+    pub fn host_key_pub(&self) -> PathBuf {
+        self.dir.join("ssh_host_ed25519_key.pub")
+    }
+
+    pub fn known_hosts(&self) -> PathBuf {
+        self.dir.join("known_hosts")
+    }
+
+    pub fn generation_marker(&self) -> PathBuf {
+        self.dir.join("generation")
+    }
+
+    pub fn lock_file(&self) -> PathBuf {
+        self.dir.join("lock")
+    }
 }
 
 #[derive(Debug, Deserialize)]

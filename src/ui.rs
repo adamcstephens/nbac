@@ -8,3 +8,18 @@ pub fn error(err: &anyhow::Error) {
         eprintln!("  {}", dim.apply_to(cause));
     }
 }
+
+pub fn step(message: &str) {
+    let style = Style::new().for_stderr().cyan().bold();
+    eprintln!("{} {message}", style.apply_to("→"));
+}
+
+pub fn warn(message: &str) {
+    let style = Style::new().for_stderr().yellow().bold();
+    eprintln!("{} {message}", style.apply_to("⚠"));
+}
+
+pub fn success(message: &str) {
+    let style = Style::new().for_stderr().green().bold();
+    eprintln!("{} {message}", style.apply_to("✓"));
+}

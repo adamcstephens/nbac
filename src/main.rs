@@ -5,9 +5,9 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
 use commands::LogKind;
+use nbac::ui;
 
 mod commands;
-mod ui;
 
 /// Nix builder on Apple container: an on-demand aarch64-linux remote builder.
 #[derive(Parser)]
