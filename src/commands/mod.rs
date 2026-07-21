@@ -1,12 +1,14 @@
 use std::io::Write;
+use std::os::unix::process::CommandExt;
 use std::path::Path;
+use std::process::Command;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
 
 use nbac::config::Config;
-use nbac::container::Runtime;
-use nbac::{keys, lock, machine, ui};
+use nbac::container::{MachineStatus, Runtime};
+use nbac::{inject, keys, lock, machine, ui};
 
 #[derive(Clone, Copy, ValueEnum)]
 pub enum LogKind {
@@ -14,14 +16,23 @@ pub enum LogKind {
     Idle,
 }
 
+/// The cold path shared by setup, start, and the proxy: everything needed to
+/// go from nothing to an SSH-ready machine, idempotently.
+fn ensure_ready(runtime: &Runtime, config: &Config) -> Result<String> {
+    ensure_services(runtime)?;
+    keys::ensure(config)?;
+    let _lock = lock::acquire(&config.state.lock_file())?;
+    let tag = machine::ensure_image(runtime, config)?;
+    machine::ensure_machine(runtime, config, &tag)?;
+    inject::inject(runtime, config)?;
+    machine::write_generation_marker(config, &tag)?;
+    Ok(tag)
+}
+
 pub fn cmd_setup(config: &Path) -> Result<()> {
     let config = Config::load(config)?;
     let runtime = Runtime::new(&config.runtime);
-    ensure_services(&runtime)?;
-    keys::ensure(&config)?;
-    let _lock = lock::acquire(&config.state.lock_file())?;
-    let tag = machine::ensure_image(&runtime, &config)?;
-    machine::ensure_machine(&runtime, &config, &tag)?;
+    let tag = ensure_ready(&runtime, &config)?;
     ui::success(&format!(
         "machine {} is running image {tag}",
         config.machine.name
@@ -32,10 +43,7 @@ pub fn cmd_setup(config: &Path) -> Result<()> {
 pub fn cmd_start(config: &Path) -> Result<()> {
     let config = Config::load(config)?;
     let runtime = Runtime::new(&config.runtime);
-    ensure_services(&runtime)?;
-    let _lock = lock::acquire(&config.state.lock_file())?;
-    let tag = machine::ensure_image(&runtime, &config)?;
-    machine::ensure_machine(&runtime, &config, &tag)?;
+    ensure_ready(&runtime, &config)?;
     ui::success(&format!("machine {} is running", config.machine.name));
     Ok(())
 }
@@ -61,15 +69,16 @@ pub fn cmd_reset(config: &Path) -> Result<()> {
 
     let runtime = Runtime::new(&config.runtime);
     ensure_services(&runtime)?;
-    let _lock = lock::acquire(&config.state.lock_file())?;
-    if let Some(info) = runtime.machine_inspect(name)? {
-        if info.status == nbac::container::MachineStatus::Running {
-            runtime.machine_stop(name)?;
+    {
+        let _lock = lock::acquire(&config.state.lock_file())?;
+        if let Some(info) = runtime.machine_inspect(name)? {
+            if info.status == MachineStatus::Running {
+                runtime.machine_stop(name)?;
+            }
+            runtime.machine_delete(name)?;
         }
-        runtime.machine_delete(name)?;
     }
-    let tag = machine::ensure_image(&runtime, &config)?;
-    machine::ensure_machine(&runtime, &config, &tag)?;
+    let tag = ensure_ready(&runtime, &config)?;
     ui::success(&format!("machine {name} recreated with image {tag}"));
     Ok(())
 }
@@ -97,12 +106,64 @@ pub fn cmd_status(_config: &Path) -> Result<()> {
     bail!("`nbac status` is not implemented yet")
 }
 
-pub fn cmd_ssh(_config: &Path, _args: &[String]) -> Result<()> {
-    bail!("`nbac ssh` is not implemented yet")
+pub fn cmd_ssh(config_path: &Path, args: &[String]) -> Result<()> {
+    let config = Config::load(config_path)?;
+    let exe = std::env::current_exe().context("cannot determine the nbac executable path")?;
+    let proxy = format!(
+        "\"{}\" --config \"{}\" proxy",
+        exe.display(),
+        config_path.display()
+    );
+    let mut cmd = Command::new("ssh");
+    cmd.arg("-F")
+        .arg("none")
+        .arg("-o")
+        .arg(format!("ProxyCommand={proxy}"))
+        .arg("-o")
+        .arg(format!(
+            "IdentityFile={}",
+            config.state.builder_key().display()
+        ))
+        .arg("-o")
+        .arg("IdentitiesOnly=yes")
+        .arg("-o")
+        .arg(format!(
+            "UserKnownHostsFile={}",
+            config.state.known_hosts().display()
+        ))
+        .arg("-o")
+        .arg("StrictHostKeyChecking=yes")
+        .arg("-o")
+        .arg(format!("User={}", config.ssh.user))
+        .arg("-o")
+        .arg(format!("Port={}", config.ssh.port))
+        .arg(&config.ssh.host_alias)
+        .args(args);
+    Err(anyhow::Error::new(cmd.exec()).context("cannot exec ssh"))
 }
 
-pub fn cmd_proxy(_config: &Path) -> Result<()> {
-    bail!("`nbac proxy` is not implemented yet")
+pub fn cmd_proxy(config_path: &Path) -> Result<()> {
+    let config = Config::load(config_path)?;
+    let runtime = Runtime::new(&config.runtime);
+    if !fast_path_ready(&runtime, &config) {
+        ensure_ready(&runtime, &config)?;
+    }
+    let err = runtime.exec_stdio_transport(&config.machine.name, config.ssh.port);
+    Err(anyhow::Error::new(err).context("cannot exec the container transport"))
+}
+
+/// One inspect, no lock, no polling: running machine whose image matches the
+/// stored generation marker means the transport can be exec'd immediately.
+fn fast_path_ready(runtime: &Runtime, config: &Config) -> bool {
+    let Ok(marker) = std::fs::read_to_string(config.state.generation_marker()) else {
+        return false;
+    };
+    let tag = format!("{}:{}", config.image.tag_prefix, marker.trim());
+    matches!(
+        runtime.machine_inspect(&config.machine.name),
+        Ok(Some(info)) if info.status == MachineStatus::Running
+            && machine::reference_matches(&info.image.reference, &tag)
+    )
 }
 
 pub fn cmd_doctor(_config: &Path, _fix: bool) -> Result<()> {

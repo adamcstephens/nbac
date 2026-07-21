@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /nix/var/nix/profiles/default/bin/nix-daemon >> /var/log/nbac/daemon.log 2>&1

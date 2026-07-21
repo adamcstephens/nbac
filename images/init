@@ -1,0 +1,6 @@
+#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+mkdir -p /run/service /var/log/nbac
+cp -a /etc/s6/sv/. /run/service/
+exec s6-svscan /run/service

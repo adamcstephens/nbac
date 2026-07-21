@@ -1,0 +1,27 @@
+#!/bin/sh
+# Powers the machine off after timeout_seconds with no established SSH
+# connections, per the host-injected /etc/nbac/runtime.toml.
+
+setting() {
+    sed -n "s/^$1 *= *//p" /etc/nbac/runtime.toml 2>/dev/null
+}
+
+idle=0
+while :; do
+    sleep 30
+    if [ "$(setting enable)" != "true" ]; then
+        idle=0
+        continue
+    fi
+    timeout="$(setting timeout_seconds)"
+    if [ -n "$(ss -Htn state established '( sport = :@SSH_PORT@ )')" ]; then
+        idle=0
+    else
+        idle=$((idle + 30))
+    fi
+    if [ -n "$timeout" ] && [ "$idle" -ge "$timeout" ]; then
+        echo "idle for ${idle}s; powering off"
+        s6-svscanctl -t /run/service
+        exit 0
+    fi
+done

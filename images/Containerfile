@@ -1,0 +1,53 @@
+FROM alpine:3.24
+
+ARG NIX_VERSION=2.35.1
+ARG NIX_SHA256=79b739996f1751573b4d2b56e4ae607855184c711f2cc1274fa0952a13d4bfc9
+ARG SSH_USER=builder
+ARG SSH_PORT=22
+
+RUN apk add --no-cache openssh-server s6 sudo socat iproute2 xz
+
+RUN wget --output-document /tmp/nix.tar.xz \
+        "https://releases.nixos.org/nix/nix-${NIX_VERSION}/nix-${NIX_VERSION}-aarch64-linux.tar.xz" \
+    && echo "${NIX_SHA256}  /tmp/nix.tar.xz" | sha256sum -c \
+    && mkdir /tmp/nix \
+    && tar -xJf /tmp/nix.tar.xz -C /tmp/nix --strip-components=1 \
+    && mkdir -p /nix/store /nix/var/nix/profiles \
+    && cp -a /tmp/nix/store/. /nix/store/ \
+    && nix_pkg="$(ls -d /nix/store/*-nix-${NIX_VERSION} | head -1)" \
+    && "${nix_pkg}/bin/nix-store" --load-db < /tmp/nix/.reginfo \
+    && ln -s "${nix_pkg}" /nix/var/nix/profiles/default \
+    && rm -r /tmp/nix /tmp/nix.tar.xz
+
+RUN addgroup -g 30000 nixbld \
+    && for i in $(seq 1 10); do \
+        adduser -S -D -H -G nixbld -g "Nix build user $i" \
+            -s /sbin/nologin -u "$((30000 + i))" "nixbld$i"; \
+    done
+
+# adduser locks the passwordless account with "!", which sshd rejects even
+# for pubkey auth; "*" means no password but not locked.
+RUN adduser -D -s /bin/sh "${SSH_USER}" \
+    && sed -i "s|^${SSH_USER}:!|${SSH_USER}:*|" /etc/shadow
+
+COPY sshd_config /etc/ssh/sshd_config
+COPY nix.conf /etc/nix/nix.conf
+COPY nix-daemon /usr/bin/nix-daemon
+COPY nbac-idle-watchdog /usr/local/bin/nbac-idle-watchdog
+COPY sv /etc/s6/sv
+# COPY to /sbin/init would follow Alpine's init -> busybox symlink and
+# overwrite busybox itself; stage the file and replace the symlink instead.
+COPY init /usr/local/sbin/nbac-init
+
+RUN rm /sbin/init \
+    && mv /usr/local/sbin/nbac-init /sbin/init \
+    && sed -i -e "s/@SSH_USER@/${SSH_USER}/" -e "s/@SSH_PORT@/${SSH_PORT}/" \
+        /etc/ssh/sshd_config /usr/local/bin/nbac-idle-watchdog \
+    && chmod 755 /sbin/init /usr/bin/nix-daemon /usr/local/bin/nbac-idle-watchdog \
+        /etc/s6/sv/*/run /etc/s6/sv/.s6-svscan/finish \
+    && printf '%s ALL=(root) NOPASSWD: /nix/var/nix/profiles/default/bin/nix-daemon --stdio\n' \
+        "${SSH_USER}" > /etc/sudoers.d/nbac \
+    && chmod 440 /etc/sudoers.d/nbac \
+    && mkdir -p /etc/nbac
+
+CMD ["/sbin/init"]

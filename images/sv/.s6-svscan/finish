@@ -1,0 +1,3 @@
+#!/bin/sh
+sync
+exec poweroff -f

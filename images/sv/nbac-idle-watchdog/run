@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/local/bin/nbac-idle-watchdog >> /var/log/nbac/idle.log 2>&1

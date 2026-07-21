@@ -21,7 +21,12 @@
 
       flake.darwinModules = rec {
         default = nbac;
-        nbac = ./nix/module.nix;
+        nbac =
+          { lib, pkgs, ... }:
+          {
+            imports = [ ./nix/module.nix ];
+            services.nbac.package = lib.mkDefault inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.nbac;
+          };
       };
 
       perSystem =
@@ -97,7 +102,10 @@
                   modules = [
                     inputs.self.darwinModules.default
                     {
-                      services.nbac.enable = true;
+                      services.nbac = {
+                        enable = true;
+                        stateDir = "/var/lib/nbac";
+                      };
                       nixpkgs.hostPlatform = "aarch64-darwin";
                       system.stateVersion = 6;
                     }

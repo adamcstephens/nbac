@@ -23,7 +23,11 @@ pub fn ensure_image(runtime: &Runtime, config: &Config) -> Result<String> {
             .context("Containerfile has no parent directory")?
             .to_path_buf(),
     };
-    runtime.build_image(&tag, &config.image.containerfile, &context)?;
+    let build_args = [
+        ("SSH_USER", config.ssh.user.clone()),
+        ("SSH_PORT", config.ssh.port.to_string()),
+    ];
+    runtime.build_image(&tag, &config.image.containerfile, &context, &build_args)?;
     Ok(tag)
 }
 
@@ -57,13 +61,17 @@ pub fn ensure_machine(runtime: &Runtime, config: &Config, tag: &str) -> Result<(
             }
         }
     }
+    Ok(())
+}
 
+/// Written only after key injection succeeds, so the proxy fast path never
+/// short-circuits into a machine without keys.
+pub fn write_generation_marker(config: &Config, tag: &str) -> Result<()> {
     std::fs::write(
         config.state.generation_marker(),
         tag.rsplit(':').next().unwrap(),
     )
-    .context("cannot write generation marker")?;
-    Ok(())
+    .context("cannot write generation marker")
 }
 
 /// Apply cpus/memory changes with `machine set` instead of recreating.
@@ -85,7 +93,7 @@ fn reconcile_resources(runtime: &Runtime, config: &Config, info: &MachineInfo) -
 
 /// `machine inspect` may report the reference as given at create time or
 /// normalized with a registry prefix.
-fn reference_matches(reference: &str, tag: &str) -> bool {
+pub fn reference_matches(reference: &str, tag: &str) -> bool {
     reference == tag || reference.ends_with(&format!("/{tag}"))
 }
 

@@ -148,9 +148,10 @@ The number-one performance complaint about hex-box's `hb`/proxy chain.
   (single guest exec) → wait for sshd with a loop *inside* the guest (one VM
   exec total, not thirty host-side probes) → exec transport.
 - Transport: stdio into the guest (`container machine run … socat STDIO
-  TCP:127.0.0.1:<port>` or equivalent), preserving the no-stable-IP property.
-  Benchmark direct machine-IP TCP in phase 3 and switch if `container`
-  exposes addresses reliably.
+  TCP:127.0.0.1:<port>`), preserving the no-stable-IP property. Benchmarked
+  in phase 3: direct machine-IP TCP is ~75 ms faster per connection (~110 ms
+  vs ~185 ms) but the machine IP changes on every boot, so stdio stays;
+  `ControlMaster` amortizes the difference across Nix's connections.
 - SSH client config keeps `ControlMaster auto` / `ControlPersist` so Nix's
   many connections share one transport.
 
@@ -162,26 +163,33 @@ The number-one performance complaint about hex-box's `hb`/proxy chain.
 - Install a **pinned upstream Nix release from the official static binary
   tarball**, verified against a checksum recorded in the Containerfile. No
   curl-pipe installers, no plan patching. Nix, not Lix.
-- openssh-server, and the minimum runtime packages (`iproute2` for the
+- openssh-server, `s6`, and the minimum runtime packages (`iproute2` for the
   watchdog's `ss`, `sudo`, `socat` if the stdio transport needs it).
 - Baked at build time: `builder` user, `sshd_config`, sudoers entry
-  (`nix-daemon --stdio` only), `nix.conf`, idle watchdog script, `/sbin/init`.
-- Init is minimal but supervises `nix-daemon` (restart on exit) instead of
-  backgrounding it once.
+  (`nix-daemon --stdio` only), `nix.conf`, idle watchdog script, `/sbin/init`,
+  and the s6 service directories.
+- Init is s6: `/sbin/init` is a few lines of sh that populate the scan
+  directory and exec `s6-svscan` (correct PID 1: reaping, signals, crash
+  restarts). Services are plain-sh run scripts: `nix-daemon`, `sshd`
+  (foreground, gated by a `down` file until keys are injected), and the idle
+  watchdog.
 - Runtime-injected only: `authorized_keys`, pinned SSH host key, and
   `/etc/nbac/runtime.toml` (idle enable/timeout) — so idle-timeout changes do
-  not force an image rebuild.
+  not force an image rebuild. The injection exec brings sshd up (or restarts
+  it) with `s6-svc -ru`.
 
 Users may point `image.containerfile` at their own file. The documented
-contract for custom images: a working `/sbin/init` that starts sshd and
-`nix-daemon`, the configured SSH user with the sudo rule, and the watchdog if
-idle shutdown is enabled. `nbac doctor` verifies the contract.
+contract for custom images: s6 supervision with scan directory
+`/run/service` and an `sshd` service the injection exec can `s6-svc -ru`, a
+supervised `nix-daemon`, the configured SSH user with the sudo rule, and the
+watchdog if idle shutdown is enabled. `nbac doctor` verifies the contract.
 
 ## Idle shutdown
 
 Guest-side watchdog baked into the image: poll `ss` for established
-connections on the SSH port; after `timeout_seconds` of none, signal PID 1 to
-power off. Reads settings from the runtime-injected file with safe defaults.
+connections on the SSH port; after `timeout_seconds` of none, request
+shutdown from PID 1 (`s6-svscanctl -t`), whose finish hook powers the VM
+off. Reads settings from the runtime-injected file with safe defaults.
 
 ## nix-darwin module
 
@@ -258,10 +266,18 @@ comes from the system install by default (see module section).
 - Confirm `pkgs.container` works end to end without Apple's pkg installer
   (entitlements/codesigning, `container system start`, kernel install on
   first use) before recommending `containerPackage = pkgs.container`.
-- Confirm what `container machine` exposes for file injection (mounts vs a
-  single guest exec) and for machine IPs (transport alternative).
-- Confirm `machine set` semantics for cpus/memory changes on an existing
-  machine (avoid unnecessary recreation).
+- ~~Confirm what `container machine` exposes for file injection~~ Resolved
+  in phase 3: a single guest exec with the script piped through stdin
+  (`machine run --interactive -- sh`). Note: `machine run` re-joins its argv
+  and shell-evaluates it in the guest, so quoting does not survive; nbac only
+  passes single safe tokens and ships payloads via stdin. Machine IPs work
+  but change on every boot (see transport benchmark).
+- ~~Confirm `machine set` semantics~~ Resolved in phase 3: cpus/memory are
+  adjustable on an existing machine, taking effect at the next restart; no
+  recreation needed.
+- `machine create` returns before the guest is bootable; a `machine run` in
+  that window fails transiently ("Inappropriate ioctl for device"), handled
+  by bounded backoff in the container wrapper.
 
 ## Decision log
 
@@ -274,6 +290,8 @@ comes from the system install by default (see module section).
 | Image | No published artifact; local build from provided or user Containerfile |
 | Activation scripts | None; `nbac setup` + lazy cold path |
 | Nix implementation in guest | Upstream Nix (static tarball), not Lix |
+| Guest init | s6 (`s6-svscan` as PID 1, plain-sh run scripts); considered a bespoke script (bad PID 1) and OpenRC (boot manager we don't need) |
+| Transport | stdio via `machine run … socat`; direct-IP TCP measured faster but machine IPs are unstable across boots |
 | Apple `container` | System-installed binary from PATH; opt-in `containerPackage` module option for `pkgs.container` |
 | Module target | nix-darwin only |
 | Async runtime | None |
