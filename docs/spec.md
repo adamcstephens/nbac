@@ -66,7 +66,6 @@ Rejected, with reasons:
                         │ reads config.toml
 ┌─ nbac (Rust, one binary) ──────────────────────────────────┐
 │ setup · status · start · stop · reset · ssh · proxy        │
-│ doctor · test · gc · logs                                  │
 └────────────────────────────────────────────────────────────┘
                         │ drives (typed wrapper, JSON via serde)
 ┌─ Apple `container` CLI (from nixpkgs) ─────────────────────┐
@@ -129,12 +128,13 @@ pair.
 | `nbac reset` | Destroy and recreate the machine (confirms; deletes guest `/nix`). |
 | `nbac ssh [args…]` | Interactive SSH into the builder. |
 | `nbac proxy` | Hidden; used as SSH `ProxyCommand`. See hot path below. |
-| `nbac doctor [--fix]` | Runtime health, DNS/external reachability, image contract checks; `--fix` applies recovery (restart runtime, re-inject keys). |
-| `nbac test` | Trivial `aarch64-linux` derivation built remotely with a deadline. |
-| `nbac gc` | `nix-collect-garbage --delete-old` inside the guest. |
-| `nbac logs <boot\|idle> [--follow] [--lines N]` | Guest log access. |
 
 Shell completions come from `clap_complete`, packaged by the flake.
+
+A `doctor`/`test`/`gc`/`logs` tier was considered and dropped: `status`
+covers the day-to-day question, `nbac ssh` reaches everything inside the
+guest (logs under `/var/log/nbac`, `nix-collect-garbage`), and recovery for
+a wedged runtime is `container system stop && container system start`.
 
 ### Proxy hot path
 
@@ -196,7 +196,7 @@ Users may point `image.containerfile` at their own file. The documented
 contract for custom images: s6 supervision with scan directory
 `/run/service` and an `sshd` service the injection exec can `s6-svc -ru`, a
 supervised `nix-daemon`, the configured SSH user with the sudo rule, and the
-watchdog if idle shutdown is enabled. `nbac doctor` verifies the contract.
+watchdog if idle shutdown is enabled.
 
 ## Idle shutdown
 
@@ -273,8 +273,8 @@ comes from the system install by default (see module section).
    `known_hosts`, module rendering TOML + `buildMachines` + ssh config;
    default Containerfile; end-to-end `nix build` of an `aarch64-linux`
    derivation from a clean machine. Benchmark stdio vs machine-IP transport.
-4. **Operations** — idle watchdog, `status`/`doctor`/`test`/`reset`/`gc`/
-   `logs`, concurrent probes.
+4. **Operations** — idle watchdog, `reset`, `status` with concurrent
+   probes.
 5. **Polish** — docs (custom-image contract, migration from nix-hex-box),
    completions packaging, release workflow.
 
@@ -308,8 +308,7 @@ comes from the system install by default (see module section).
   reachability probe.
 - The vmnet NAT dataplane can wedge (observed: guest outbound TCP
   blackholed while UDP DNS worked, after repeated hard poweroffs).
-  Recovery: restart the container services; a `doctor --fix` candidate for
-  phase 4, along with checking guest-side external reachability.
+  Recovery: `container system stop && container system start`.
 - macOS Local Network privacy (macOS 15+) silently drops in-process
   connects to vmnet addresses from unsigned binaries in contexts without a
   grant; Apple-signed `/usr/bin/nc` is exempt, hence the exec'd transport.
@@ -329,5 +328,6 @@ comes from the system install by default (see module section).
 | Transport | TCP via `nc` to the machine IP, resolved per connection from `machine inspect`; stdio via `machine run … socat` rejected (CLI progress chatter corrupts the stream under parallel load) |
 | Apple `container` | System-installed binary from PATH; opt-in `containerPackage` module option for `pkgs.container` |
 | Module target | nix-darwin only |
+| Ops surface | `status` probes only; `doctor`/`test`/`gc`/`logs` dropped in phase 4 |
 | Async runtime | None |
 | CI | `nix flake check` only until a forge is chosen |

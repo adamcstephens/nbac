@@ -4,7 +4,6 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
-use commands::LogKind;
 use nbac::ui;
 
 mod commands;
@@ -47,27 +46,6 @@ enum Command {
     /// Run as SSH ProxyCommand: ensure the machine is up, then exec the transport
     #[command(hide = true)]
     Proxy,
-    /// Check runtime health, reachability, and the image contract
-    Doctor {
-        /// Apply recovery steps
-        #[arg(long)]
-        fix: bool,
-    },
-    /// Build a trivial aarch64-linux derivation on the builder
-    Test,
-    /// Run nix-collect-garbage inside the guest
-    Gc,
-    /// Show guest logs
-    Logs {
-        /// Log to show
-        log: LogKind,
-        /// Keep the log open and print new entries
-        #[arg(long)]
-        follow: bool,
-        /// Number of trailing lines to print
-        #[arg(long, value_name = "N")]
-        lines: Option<u64>,
-    },
     /// Generate shell completion scripts
     Completions {
         /// Shell to generate completions for
@@ -96,10 +74,6 @@ fn run(cli: Cli) -> Result<()> {
         Command::Reset => commands::cmd_reset(&config),
         Command::Ssh { args } => commands::cmd_ssh(&config, &args),
         Command::Proxy => commands::cmd_proxy(&config),
-        Command::Doctor { fix } => commands::cmd_doctor(&config, fix),
-        Command::Test => commands::cmd_test(&config),
-        Command::Gc => commands::cmd_gc(&config),
-        Command::Logs { log, follow, lines } => commands::cmd_logs(&config, log, follow, lines),
         Command::Completions { shell } => {
             let mut cmd = Cli::command();
             clap_complete::generate(shell, &mut cmd, "nbac", &mut std::io::stdout());

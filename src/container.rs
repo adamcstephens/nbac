@@ -116,13 +116,13 @@ impl Runtime {
     }
 
     pub fn machine_inspect(&self, name: &str) -> Result<Option<MachineInfo>, Error> {
-        let result: Result<Vec<MachineInfo>, Error> =
-            self.recovering(|rt| rt.output_json(&["machine", "inspect", name]));
-        match result {
-            Ok(machines) => Ok(machines.into_iter().next()),
-            Err(Error::NotFound { .. }) => Ok(None),
-            Err(e) => Err(e),
-        }
+        first_machine(self.recovering(|rt| rt.output_json(&["machine", "inspect", name])))
+    }
+
+    /// Inspect without the service-start recovery: read-only probes must not
+    /// mutate runtime state.
+    pub fn machine_inspect_probe(&self, name: &str) -> Result<Option<MachineInfo>, Error> {
+        first_machine(self.output_json(&["machine", "inspect", name]))
     }
 
     pub fn machine_create(&self, machine: &config::Machine, image_tag: &str) -> Result<(), Error> {
@@ -326,6 +326,14 @@ impl Runtime {
 
     fn command_line(&self, args: &[&str]) -> String {
         format!("{} {}", self.binary, args.join(" "))
+    }
+}
+
+fn first_machine(result: Result<Vec<MachineInfo>, Error>) -> Result<Option<MachineInfo>, Error> {
+    match result {
+        Ok(machines) => Ok(machines.into_iter().next()),
+        Err(Error::NotFound { .. }) => Ok(None),
+        Err(e) => Err(e),
     }
 }
 

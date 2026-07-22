@@ -4,17 +4,13 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
-use clap::ValueEnum;
 
 use nbac::config::Config;
 use nbac::container::{MachineStatus, Runtime};
 use nbac::{inject, keys, lock, machine, transport, ui};
 
-#[derive(Clone, Copy, ValueEnum)]
-pub enum LogKind {
-    Boot,
-    Idle,
-}
+mod status;
+pub use status::cmd_status;
 
 /// The cold path shared by setup, start, and the proxy: everything needed to
 /// go from nothing to an SSH-ready machine, idempotently.
@@ -102,23 +98,15 @@ fn confirm(prompt: &str) -> Result<bool> {
     Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
 }
 
-pub fn cmd_status(_config: &Path) -> Result<()> {
-    bail!("`nbac status` is not implemented yet")
-}
-
-pub fn cmd_ssh(config_path: &Path, args: &[String]) -> Result<()> {
-    let config = Config::load(config_path)?;
-    let exe = std::env::current_exe().context("cannot determine the nbac executable path")?;
-    let proxy = format!(
-        "\"{}\" --config \"{}\" proxy",
-        exe.display(),
-        config_path.display()
-    );
+/// An ssh invocation with the pinned identity and host key and the given
+/// ProxyCommand; callers append the destination and command. The configured
+/// port is not passed: every ProxyCommand embeds it.
+fn ssh_command(config: &Config, proxy_command: &str) -> Command {
     let mut cmd = Command::new("ssh");
     cmd.arg("-F")
         .arg("none")
         .arg("-o")
-        .arg(format!("ProxyCommand={proxy}"))
+        .arg(format!("ProxyCommand={proxy_command}"))
         .arg("-o")
         .arg(format!(
             "IdentityFile={}",
@@ -134,11 +122,20 @@ pub fn cmd_ssh(config_path: &Path, args: &[String]) -> Result<()> {
         .arg("-o")
         .arg("StrictHostKeyChecking=yes")
         .arg("-o")
-        .arg(format!("User={}", config.ssh.user))
-        .arg("-o")
-        .arg(format!("Port={}", config.ssh.port))
-        .arg(&config.ssh.host_alias)
-        .args(args);
+        .arg(format!("User={}", config.ssh.user));
+    cmd
+}
+
+pub fn cmd_ssh(config_path: &Path, args: &[String]) -> Result<()> {
+    let config = Config::load(config_path)?;
+    let exe = std::env::current_exe().context("cannot determine the nbac executable path")?;
+    let proxy = format!(
+        "\"{}\" --config \"{}\" proxy",
+        exe.display(),
+        config_path.display()
+    );
+    let mut cmd = ssh_command(&config, &proxy);
+    cmd.arg(&config.ssh.host_alias).args(args);
     Err(anyhow::Error::new(cmd.exec()).context("cannot exec ssh"))
 }
 
@@ -175,20 +172,4 @@ fn fast_path_ip(runtime: &Runtime, config: &Config) -> Option<String> {
     (info.status == MachineStatus::Running
         && machine::reference_matches(&info.image.reference, &tag))
     .then_some(info.ip_address)?
-}
-
-pub fn cmd_doctor(_config: &Path, _fix: bool) -> Result<()> {
-    bail!("`nbac doctor` is not implemented yet")
-}
-
-pub fn cmd_test(_config: &Path) -> Result<()> {
-    bail!("`nbac test` is not implemented yet")
-}
-
-pub fn cmd_gc(_config: &Path) -> Result<()> {
-    bail!("`nbac gc` is not implemented yet")
-}
-
-pub fn cmd_logs(_config: &Path, _log: LogKind, _follow: bool, _lines: Option<u64>) -> Result<()> {
-    bail!("`nbac logs` is not implemented yet")
 }
