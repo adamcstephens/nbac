@@ -148,16 +148,19 @@ The number-one performance complaint about hex-box's `hb`/proxy chain.
   (single guest exec) → wait for sshd with a loop *inside* the guest (one VM
   exec total, not thirty host-side probes) → exec transport.
 - Transport: plain TCP to the machine's host-only vmnet address and the
-  guest sshd port, exec'ing Apple-signed `/usr/bin/nc -G 3`. The IP comes
-  from the guest itself — the injection exec reports it and nbac records it
-  in the state dir — because `machine inspect` keeps returning the boot-time
-  allocation, which goes stale when the machine reboots in place. The fast
-  path probes reachability (`nc -z -G 3`) and falls back to the cold path,
-  which re-injects and re-records. Two rejected alternatives: an stdio
-  transport through `container machine run … socat` (~75 ms slower per
-  connection), and an in-process Rust relay — macOS Local Network privacy
-  silently blackholes connects from unsigned binaries in ungrantable
-  contexts, and a nix-built binary's TCC identity changes every rebuild.
+  guest sshd port, exec'ing Apple-signed `/usr/bin/nc -G 3`. The IP is
+  taken per connection from the `machine inspect` call the fast path
+  already makes for status and generation — machine IPs change on every
+  boot and nothing persists them, so the no-stable-IP property holds. The
+  fast path probes reachability (`nc -z -G 3`) and falls back to the cold
+  path on failure: a machine booted outside nbac has no sshd yet (keys are
+  not injected), and a wedged runtime can leave the record stale. Two
+  rejected alternatives: an stdio transport through `container machine run
+  … socat` (~75 ms slower per connection, and the CLI's stdout chatter can
+  corrupt the stream), and an in-process Rust relay — macOS Local Network
+  privacy silently blackholes connects from unsigned binaries in
+  ungrantable contexts, and a nix-built binary's TCC identity changes
+  every rebuild.
 - The SSH client config must **not** set `ControlMaster`/`ControlPersist`:
   Nix verifies every connection by reading a `LocalCommand echo started`
   sentinel as the first line of ssh stdout, and config-level multiplexing
@@ -297,10 +300,12 @@ comes from the system install by default (see module section).
   root. When nbac runs with euid 0 it wraps every `container` invocation in
   `launchctl asuser <uid> sudo --user #<uid> --set-home`, deriving the uid
   from the state directory's owner.
-- `machine inspect`'s `ipAddress` reflects the boot-time allocation and goes
-  stale when the machine reboots in place (observed: inspect reporting .2
-  while the guest held .3). The guest's own view, captured during
-  injection, is authoritative.
+- `machine inspect`'s `ipAddress` was once observed stale (reporting .2
+  while the guest held .3) — but only in a session where the vmnet plugin
+  had been restarted underneath a running machine. In normal operation,
+  including idle poweroff/boot cycles, it tracks each boot's lease
+  correctly, so the proxy trusts it per connection, guarded by the
+  reachability probe.
 - The vmnet NAT dataplane can wedge (observed: guest outbound TCP
   blackholed while UDP DNS worked, after repeated hard poweroffs).
   Recovery: restart the container services; a `doctor --fix` candidate for

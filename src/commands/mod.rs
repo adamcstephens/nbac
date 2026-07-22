@@ -146,19 +146,19 @@ pub fn cmd_proxy(config_path: &Path) -> Result<()> {
     let config = Config::load(config_path)?;
     let runtime = Runtime::new(&config);
     // A running machine with a matching marker can still lack a listening
-    // sshd or hold a stale recorded IP (rebooted outside nbac); a failed
-    // probe falls back to the cold path, whose injection starts sshd and
-    // re-records the IP.
+    // sshd (booted outside nbac, so nothing injected keys and released it),
+    // and a wedged runtime can leave the inspect record stale; a failed
+    // probe falls back to the cold path.
     let ip = match fast_path_ip(&runtime, &config)
         .filter(|ip| transport::reachable(ip, config.ssh.port))
     {
         Some(ip) => ip,
         None => {
             ensure_ready(&runtime, &config)?;
-            std::fs::read_to_string(config.state.guest_ip())
-                .context("injection did not record the guest IP")?
-                .trim()
-                .to_string()
+            runtime
+                .machine_inspect(&config.machine.name)?
+                .and_then(|info| info.ip_address)
+                .context("machine is running but reports no IP address")?
         }
     };
     let err = transport::exec(&ip, config.ssh.port);
@@ -167,15 +167,14 @@ pub fn cmd_proxy(config_path: &Path) -> Result<()> {
 
 /// One inspect, no lock, no polling: a running machine whose image matches
 /// the stored generation marker can be connected to immediately, at the IP
-/// the guest reported during the last injection.
+/// the same inspect reports.
 fn fast_path_ip(runtime: &Runtime, config: &Config) -> Option<String> {
     let marker = std::fs::read_to_string(config.state.generation_marker()).ok()?;
     let tag = format!("{}:{}", config.image.tag_prefix, marker.trim());
     let info = runtime.machine_inspect(&config.machine.name).ok()??;
     (info.status == MachineStatus::Running
         && machine::reference_matches(&info.image.reference, &tag))
-    .then(|| std::fs::read_to_string(config.state.guest_ip()).ok())?
-    .map(|ip| ip.trim().to_string())
+    .then_some(info.ip_address)?
 }
 
 pub fn cmd_doctor(_config: &Path, _fix: bool) -> Result<()> {

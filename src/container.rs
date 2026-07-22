@@ -206,14 +206,13 @@ impl Runtime {
         self.recovering(|rt| rt.streamed(&args))
     }
 
-    /// Run a shell script inside the machine, fed through stdin, returning
-    /// its stdout: the one guest exec the cold path uses to inject keys and
-    /// settings.
-    pub fn machine_run_piped(&self, name: &str, script: &str) -> Result<String, Error> {
+    /// Run a shell script inside the machine, fed through stdin: the one
+    /// guest exec the cold path uses to inject keys and settings.
+    pub fn machine_run_piped(&self, name: &str, script: &str) -> Result<(), Error> {
         self.while_booting(|rt| rt.machine_run_piped_once(name, script))
     }
 
-    fn machine_run_piped_once(&self, name: &str, script: &str) -> Result<String, Error> {
+    fn machine_run_piped_once(&self, name: &str, script: &str) -> Result<(), Error> {
         self.recovering(|rt| {
             let args = [
                 "machine",
@@ -243,7 +242,7 @@ impl Runtime {
                 source,
             })?;
             if output.status.success() {
-                Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+                Ok(())
             } else {
                 Err(classify(rt.command_line(&args), &output))
             }

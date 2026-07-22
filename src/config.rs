@@ -106,10 +106,6 @@ impl State {
         self.dir.join("generation")
     }
 
-    pub fn guest_ip(&self) -> PathBuf {
-        self.dir.join("guest_ip")
-    }
-
     pub fn lock_file(&self) -> PathBuf {
         self.dir.join("lock")
     }
