@@ -18,6 +18,19 @@ pub fn reachable(ip: &str, port: u16) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// The cold path verifies sshd is listening from inside the guest before
+/// this runs, so an unreachable address here is the host-side vmnet path
+/// still settling after boot; give it a few tries before giving up.
+pub fn await_reachable(ip: &str, port: u16) -> bool {
+    for _ in 0..5 {
+        if reachable(ip, port) {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    false
+}
+
 /// Replace this process with the transport. Only returns on exec failure.
 pub fn exec(ip: &str, port: u16) -> std::io::Error {
     Command::new("/usr/bin/nc")

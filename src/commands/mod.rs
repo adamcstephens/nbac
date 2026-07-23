@@ -14,21 +14,26 @@ pub use status::cmd_status;
 
 /// The cold path shared by setup, start, and the proxy: everything needed to
 /// go from nothing to an SSH-ready machine, idempotently.
-fn ensure_ready(runtime: &Runtime, config: &Config) -> Result<String> {
+struct Ready {
+    tag: String,
+    guest_ip: String,
+}
+
+fn ensure_ready(runtime: &Runtime, config: &Config) -> Result<Ready> {
     ensure_services(runtime)?;
     let _lock = lock::acquire(&config.state.lock_file())?;
     keys::ensure(config)?;
     let tag = machine::ensure_image(runtime, config)?;
     machine::ensure_machine(runtime, config, &tag)?;
-    inject::inject(runtime, config)?;
+    let guest_ip = inject::inject(runtime, config)?;
     machine::write_generation_marker(config, &tag)?;
-    Ok(tag)
+    Ok(Ready { tag, guest_ip })
 }
 
 pub fn cmd_setup(config: &Path) -> Result<()> {
     let config = Config::load(config)?;
     let runtime = Runtime::new(&config);
-    let tag = ensure_ready(&runtime, &config)?;
+    let tag = ensure_ready(&runtime, &config)?.tag;
     ui::success(&format!(
         "machine {} is running image {tag}",
         config.machine.name
@@ -74,7 +79,7 @@ pub fn cmd_reset(config: &Path) -> Result<()> {
             runtime.machine_delete(name)?;
         }
     }
-    let tag = ensure_ready(&runtime, &config)?;
+    let tag = ensure_ready(&runtime, &config)?.tag;
     ui::success(&format!("machine {name} recreated with image {tag}"));
     Ok(())
 }
@@ -145,17 +150,24 @@ pub fn cmd_proxy(config_path: &Path) -> Result<()> {
     // A running machine with a matching marker can still lack a listening
     // sshd (booted outside nbac, so nothing injected keys and released it),
     // and a wedged runtime can leave the inspect record stale; a failed
-    // probe falls back to the cold path.
+    // probe falls back to the cold path. The cold path connects to the IP
+    // the injection exec read inside the guest, since inspect's record lags
+    // the DHCP lease during early boot.
     let ip = match fast_path_ip(&runtime, &config)
         .filter(|ip| transport::reachable(ip, config.ssh.port))
     {
         Some(ip) => ip,
         None => {
-            ensure_ready(&runtime, &config)?;
-            runtime
-                .machine_inspect(&config.machine.name)?
-                .and_then(|info| info.ip_address)
-                .context("machine is running but reports no IP address")?
+            let ip = ensure_ready(&runtime, &config)?.guest_ip;
+            if !transport::await_reachable(&ip, config.ssh.port) {
+                bail!(
+                    "guest {ip}:{} is unreachable from the host although sshd is up; \
+                     the vmnet dataplane may be wedged (try `container system stop`, \
+                     then reconnect)",
+                    config.ssh.port
+                );
+            }
+            ip
         }
     };
     let err = transport::exec(&ip, config.ssh.port);

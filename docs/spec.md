@@ -149,12 +149,16 @@ The number-one performance complaint about hex-box's `hb`/proxy chain.
   exec total, not thirty host-side probes) → exec transport.
 - Transport: plain TCP to the machine's host-only vmnet address and the
   guest sshd port, exec'ing Apple-signed `/usr/bin/nc -G 3`. The IP is
-  taken per connection from the `machine inspect` call the fast path
-  already makes for status and generation — machine IPs change on every
-  boot and nothing persists them, so the no-stable-IP property holds. The
-  fast path probes reachability (`nc -z -G 3`) and falls back to the cold
-  path on failure: a machine booted outside nbac has no sshd yet (keys are
-  not injected), and a wedged runtime can leave the record stale. Two
+  resolved per connection and nothing persists it, so the no-stable-IP
+  property holds. The fast path takes it from the `machine inspect` call it
+  already makes for status and generation, probes reachability
+  (`nc -z -G 3`), and falls back to the cold path on failure: a machine
+  booted outside nbac has no sshd yet (keys are not injected), and a wedged
+  runtime can leave the record stale. The cold path instead takes the IP
+  the injection exec reads inside the guest (over vsock, independent of
+  vmnet) — inspect's record lags the DHCP lease during early boot — and
+  probes it with bounded retries before exec'ing the transport, failing
+  with a wedged-vmnet diagnosis instead of one silent 3 s connect timeout. Two
   rejected alternatives: an stdio transport through `container machine run
   … socat` (~75 ms slower per connection, and the CLI's stdout chatter can
   corrupt the stream), and an in-process Rust relay — macOS Local Network

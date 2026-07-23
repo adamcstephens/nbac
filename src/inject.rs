@@ -1,16 +1,30 @@
 //! Runtime injection: the single guest exec that writes the SSH keys and
-//! idle settings into the machine and (re)starts sshd.
+//! idle settings into the machine and (re)starts sshd. Returns the IP the
+//! guest itself holds: `machine inspect` lags the DHCP lease during early
+//! boot, and this exec runs over vsock, which does not depend on vmnet.
 
 use anyhow::{Context, Result};
 
 use crate::config::Config;
 use crate::container::Runtime;
 
-pub fn inject(runtime: &Runtime, config: &Config) -> Result<()> {
+pub fn inject(runtime: &Runtime, config: &Config) -> Result<String> {
     let script = script(config)?;
-    runtime
+    let stdout = runtime
         .machine_run_piped(&config.machine.name, &script)
-        .context("key injection failed")
+        .context("key injection failed")?;
+    guest_ip(&stdout).context("injection exec did not report the guest IP")
+}
+
+/// `machine run` can interleave CLI chatter with the guest's output, so
+/// take the last line that is a plain IPv4 address.
+fn guest_ip(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| line.parse::<std::net::Ipv4Addr>().is_ok())
+        .map(Into::into)
 }
 
 fn script(config: &Config) -> Result<String> {
@@ -55,6 +69,7 @@ if [ -z "$(ss -Htln "sport = :{port}")" ]; then
     echo "sshd is not listening on port {port}" >&2
     exit 1
 fi
+ip -4 addr show dev eth0 | sed -n 's|.*inet \([0-9.]*\)/.*|\1|p'
 "#
     ))
 }
@@ -94,6 +109,15 @@ mod tests {
         assert!(script.contains("ssh-ed25519 BBBB host\nNBAC_EOF"));
         assert!(script.contains("timeout_seconds = 120"));
         assert!(script.contains("/home/builder/.ssh"));
+    }
+
+    #[test]
+    fn guest_ip_ignores_chatter_and_takes_the_address_line() {
+        assert_eq!(
+            guest_ip("Booting machine...\n192.168.65.9\n").as_deref(),
+            Some("192.168.65.9")
+        );
+        assert_eq!(guest_ip("no address here\n"), None);
     }
 
     #[test]
