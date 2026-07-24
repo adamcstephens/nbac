@@ -173,9 +173,12 @@ in
 
     supportedFeatures = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ ];
-      example = [ "big-parallel" ];
-      description = "Features the builder supports.";
+      example = [
+        "big-parallel"
+      ];
+      description = ''
+        Features the builder supports.
+      '';
     };
 
     mandatoryFeatures = lib.mkOption {
@@ -201,6 +204,8 @@ in
         message = "services.nbac only supports aarch64-darwin";
       }
     ];
+
+    services.nbac.supportedFeatures = [ "uid-range" ];
 
     environment.systemPackages = [
       cfg.package

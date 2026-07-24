@@ -19,12 +19,6 @@ RUN wget --output-document /tmp/nix.tar.xz \
     && ln -s "${nix_pkg}" /nix/var/nix/profiles/default \
     && rm -r /tmp/nix /tmp/nix.tar.xz
 
-RUN addgroup -g 30000 nixbld \
-    && for i in $(seq 1 10); do \
-        adduser -S -D -H -G nixbld -g "Nix build user $i" \
-            -s /sbin/nologin -u "$((30000 + i))" "nixbld$i"; \
-    done
-
 # adduser locks the passwordless account with "!", which sshd rejects even
 # for pubkey auth; "*" means no password but not locked.
 RUN adduser -D -s /bin/sh "${SSH_USER}" \

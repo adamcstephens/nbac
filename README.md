@@ -82,7 +82,9 @@ nixpkgs kernel build requires the `big-parallel` feature, the builder must
 advertise it:
 
 ```nix
-services.nbac.supportedFeatures = [ "big-parallel" ];
+services.nbac.supportedFeatures = [
+  "big-parallel"
+];
 ```
 
 Add that (and enough `machine.{cpus,memory}` to compile a kernel) in one
