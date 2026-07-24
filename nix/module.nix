@@ -11,6 +11,10 @@ let
   configToml = settingsFormat.generate "nbac-config.toml" {
     machine = {
       inherit (cfg.machine) name cpus memory;
+    }
+    // lib.optionalAttrs cfg.virtualization.enable {
+      virtualization = true;
+      kernel = toString cfg.virtualization.kernelPackage;
     };
     image = {
       containerfile = toString cfg.image.containerfile;
@@ -68,6 +72,25 @@ in
         type = lib.types.str;
         default = "6G";
         description = "Memory allocation, with an optional K/M/G/T/P suffix.";
+      };
+    };
+
+    virtualization = {
+      enable = lib.mkEnableOption ''
+        nested virtualization in the builder VM (KVM). Requires Apple Silicon
+        M3+ and macOS 15+, and building the KVM-enabled guest kernel on the
+        builder itself — bring nbac up first, then enable this and rebuild.
+        The builder must advertise the `big-parallel` feature to schedule the
+        kernel build (see `supportedFeatures`)'';
+
+      kernelPackage = lib.mkOption {
+        type = lib.types.package;
+        defaultText = lib.literalExpression "nbac.packages.aarch64-linux.nbac-kernel";
+        description = ''
+          aarch64-linux kernel image built with `CONFIG_KVM=y`, passed to
+          `container machine create --kernel`. Only realized when
+          `virtualization.enable` is set. The flake provides the default.
+        '';
       };
     };
 

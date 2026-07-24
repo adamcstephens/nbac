@@ -62,8 +62,34 @@ first build triggers the same cold path lazily.)
 
 Useful options under `services.nbac`: `machine.{name,cpus,memory}`,
 `idle.{enable,timeoutSeconds}`, `image.{containerfile,buildContext}`,
-`stateDir`, and builder scheduling (`systems`, `maxJobs`, `speedFactor`,
-`supportedFeatures`, `mandatoryFeatures`, `protocol`).
+`stateDir`, `virtualization.enable`, and builder scheduling (`systems`,
+`maxJobs`, `speedFactor`, `supportedFeatures`, `mandatoryFeatures`,
+`protocol`).
+
+## Nested virtualization
+
+`services.nbac.virtualization.enable` (default off) exposes `/dev/kvm` inside
+the builder so it can itself run VMs — needed for `nixos-test`-style
+derivations and KVM-accelerated cross builds. It requires Apple silicon M3+
+and macOS 15+, and switches the machine to a custom `aarch64-linux` guest
+kernel built with `CONFIG_KVM=y` (from the checked-in `config`, the running
+builder's kernel config with KVM enabled) that nbac passes to `container
+machine create --virtualization --kernel`.
+
+That kernel can only be built on an `aarch64-linux` builder — nbac itself — so
+bring nbac up with virtualization off first, then enable it. Because every
+nixpkgs kernel build requires the `big-parallel` feature, the builder must
+advertise it:
+
+```nix
+services.nbac.supportedFeatures = [ "big-parallel" ];
+```
+
+Add that (and enough `machine.{cpus,memory}` to compile a kernel) in one
+`darwin-rebuild switch`, then set `virtualization.enable = true` and rebuild
+again; the second rebuild schedules the kernel build on the running builder.
+Toggling virtualization on an existing machine takes effect after `nbac
+reset`.
 
 ## Commands
 

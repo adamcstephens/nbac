@@ -126,21 +126,9 @@ impl Runtime {
     }
 
     pub fn machine_create(&self, machine: &config::Machine, image_tag: &str) -> Result<(), Error> {
-        self.recovering(|rt| {
-            rt.streamed(&[
-                "machine",
-                "create",
-                "--name",
-                &machine.name,
-                "--cpus",
-                &machine.cpus.to_string(),
-                "--memory",
-                &machine.memory,
-                "--home-mount",
-                "none",
-                image_tag,
-            ])
-        })
+        let args = create_args(machine, image_tag);
+        let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.recovering(|rt| rt.streamed(&argv))
     }
 
     pub fn machine_set(&self, machine: &config::Machine) -> Result<(), Error> {
@@ -330,6 +318,33 @@ impl Runtime {
     }
 }
 
+/// Argument vector for `container machine create`. Nested virtualization adds
+/// `--virtualization` and a `--kernel` pointing at a KVM-enabled image; the
+/// image reference stays last, after every option.
+fn create_args(machine: &config::Machine, image_tag: &str) -> Vec<String> {
+    let mut args = vec![
+        "machine".into(),
+        "create".into(),
+        "--name".into(),
+        machine.name.clone(),
+        "--cpus".into(),
+        machine.cpus.to_string(),
+        "--memory".into(),
+        machine.memory.clone(),
+        "--home-mount".into(),
+        "none".into(),
+    ];
+    if machine.virtualization {
+        args.push("--virtualization".into());
+    }
+    if let Some(kernel) = &machine.kernel {
+        args.push("--kernel".into());
+        args.push(kernel.display().to_string());
+    }
+    args.push(image_tag.into());
+    args
+}
+
 fn first_machine(result: Result<Vec<MachineInfo>, Error>) -> Result<Option<MachineInfo>, Error> {
     match result {
         Ok(machines) => Ok(machines.into_iter().next()),
@@ -381,5 +396,33 @@ fn classify(command: String, output: &Output) -> Error {
             status: output.status,
             stderr,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Machine;
+
+    #[test]
+    fn create_args_default_has_no_virtualization() {
+        let args = create_args(&Machine::default(), "nbac-builder:abc");
+        assert!(!args.iter().any(|a| a == "--virtualization"));
+        assert!(!args.iter().any(|a| a == "--kernel"));
+        assert_eq!(args.last().unwrap(), "nbac-builder:abc");
+    }
+
+    #[test]
+    fn create_args_passes_virtualization_and_kernel() {
+        let machine = Machine {
+            virtualization: true,
+            kernel: Some("/nix/store/xxx-nbac-kernel".into()),
+            ..Machine::default()
+        };
+        let args = create_args(&machine, "nbac-builder:abc");
+        assert!(args.iter().any(|a| a == "--virtualization"));
+        let kernel = args.iter().position(|a| a == "--kernel").unwrap();
+        assert_eq!(args[kernel + 1], "/nix/store/xxx-nbac-kernel");
+        assert_eq!(args.last().unwrap(), "nbac-builder:abc");
     }
 }

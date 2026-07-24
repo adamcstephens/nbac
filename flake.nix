@@ -26,6 +26,7 @@
           {
             imports = [ ./nix/module.nix ];
             services.nbac.package = lib.mkDefault inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.nbac;
+            services.nbac.virtualization.kernelPackage = lib.mkDefault inputs.self.packages.aarch64-linux.nbac-kernel;
           };
       };
 
@@ -61,6 +62,9 @@
           packages = {
             default = nbac;
             inherit nbac nbac-unwrapped;
+          }
+          // lib.optionalAttrs (system == "aarch64-linux") {
+            nbac-kernel = pkgs.callPackage ./nix/kernel.nix { };
           };
 
           checks = {

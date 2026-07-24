@@ -32,6 +32,8 @@ pub struct Machine {
     pub name: String,
     pub cpus: u32,
     pub memory: String,
+    pub virtualization: bool,
+    pub kernel: Option<PathBuf>,
 }
 
 impl Default for Machine {
@@ -40,6 +42,8 @@ impl Default for Machine {
             name: "nbac".into(),
             cpus: 4,
             memory: "6G".into(),
+            virtualization: false,
+            kernel: None,
         }
     }
 }
@@ -198,6 +202,8 @@ mod tests {
 
         assert_eq!(config.machine.name, "nbac");
         assert_eq!(config.machine.memory, "6G");
+        assert!(!config.machine.virtualization);
+        assert!(config.machine.kernel.is_none());
         assert!(config.image.build_context.is_none());
         assert_eq!(config.ssh.port, 22);
         assert_eq!(config.idle.timeout_seconds, 300);
