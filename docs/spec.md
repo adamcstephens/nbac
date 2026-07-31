@@ -16,7 +16,7 @@ best ideas and discarding its architecture.
   image artifact anywhere.
 
 Non-goals: Docker API compatibility (no Socktainer), Linux/NixOS hosts,
-x86_64 guests, multi-machine fleets.
+multi-machine fleets.
 
 ## Lessons from nix-hex-box
 
@@ -212,7 +212,7 @@ off. Reads settings from the runtime-injected file with safe defaults.
 ## nix-darwin module
 
 Options (roughly mirroring the TOML): `enable`, `machine.{name,cpus,memory}`,
-`image.{containerfile,buildContext}`, `ssh.{user,port,hostAlias}`,
+`rosetta.enable`, `image.{containerfile,buildContext}`, `ssh.{user,port,hostAlias}`,
 `idle.{enable,timeoutSeconds}`, `stateDir`, plus builder-scheduling options
 passed straight to `nix.buildMachines` (`systems`, `maxJobs`, `speedFactor`,
 `supportedFeatures`, `mandatoryFeatures`, `protocol`).
@@ -334,4 +334,5 @@ comes from the system install by default (see module section).
 | Module target | nix-darwin only |
 | Ops surface | `status` probes only; `doctor`/`test`/`gc`/`logs` dropped in phase 4 |
 | Async runtime | None |
+| x86_64-linux | Opt-in `rosetta.enable`: amd64-platform image and machine, the only mode where `container` attaches Rosetta; guest Nix stays native aarch64 with `extra-platforms = x86_64-linux` |
 | CI | `nix flake check` only until a forge is chosen |

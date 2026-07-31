@@ -1,5 +1,6 @@
 FROM alpine:3.24
 
+ARG TARGETARCH
 ARG NIX_VERSION=2.35.1
 ARG NIX_SHA256=79b739996f1751573b4d2b56e4ae607855184c711f2cc1274fa0952a13d4bfc9
 ARG SSH_USER=builder
@@ -7,6 +8,9 @@ ARG SSH_PORT=22
 
 RUN apk add --no-cache openssh-server s6 sudo socat iproute2 xz curl
 
+# Nix stays aarch64 on the amd64 platform too: the kernel is always arm64,
+# so the native daemon builds aarch64-linux at full speed while Rosetta's
+# binfmt handler (attached only to amd64 machines) runs x86_64 builds.
 RUN wget --output-document /tmp/nix.tar.xz \
         "https://releases.nixos.org/nix/nix-${NIX_VERSION}/nix-${NIX_VERSION}-aarch64-linux.tar.xz" \
     && echo "${NIX_SHA256}  /tmp/nix.tar.xz" | sha256sum -c \
@@ -42,6 +46,9 @@ RUN rm /sbin/init \
     && printf '%s ALL=(root) NOPASSWD: /nix/var/nix/profiles/default/bin/nix-daemon --stdio\n' \
         "${SSH_USER}" > /etc/sudoers.d/nbac \
     && chmod 440 /etc/sudoers.d/nbac \
-    && mkdir -p /etc/nbac
+    && mkdir -p /etc/nbac \
+    && if [ "${TARGETARCH}" = "amd64" ]; then \
+        echo "extra-platforms = x86_64-linux" >> /etc/nix/nix.conf; \
+    fi
 
 CMD ["/sbin/init"]

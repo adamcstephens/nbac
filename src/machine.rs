@@ -27,7 +27,13 @@ pub fn ensure_image(runtime: &Runtime, config: &Config) -> Result<String> {
         ("SSH_USER", config.ssh.user.clone()),
         ("SSH_PORT", config.ssh.port.to_string()),
     ];
-    runtime.build_image(&tag, &config.image.containerfile, &context, &build_args)?;
+    runtime.build_image(
+        &tag,
+        config.machine.arch(),
+        &config.image.containerfile,
+        &context,
+        &build_args,
+    )?;
     Ok(tag)
 }
 

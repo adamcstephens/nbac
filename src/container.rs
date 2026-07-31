@@ -175,13 +175,22 @@ impl Runtime {
     pub fn build_image(
         &self,
         tag: &str,
+        arch: &str,
         containerfile: &Path,
         context: &Path,
         build_args: &[(&str, String)],
     ) -> Result<(), Error> {
         let containerfile = containerfile.display().to_string();
         let context = context.display().to_string();
-        let mut args = vec!["build", "--file", &containerfile, "--tag", tag];
+        let mut args = vec![
+            "build",
+            "--file",
+            &containerfile,
+            "--arch",
+            arch,
+            "--tag",
+            tag,
+        ];
         let pairs: Vec<String> = build_args
             .iter()
             .map(|(key, value)| format!("{key}={value}"))
@@ -331,6 +340,8 @@ fn create_args(machine: &config::Machine, image_tag: &str) -> Vec<String> {
         machine.cpus.to_string(),
         "--memory".into(),
         machine.memory.clone(),
+        "--arch".into(),
+        machine.arch().into(),
         "--home-mount".into(),
         "none".into(),
     ];
@@ -409,6 +420,20 @@ mod tests {
         let args = create_args(&Machine::default(), "nbac-builder:abc");
         assert!(!args.iter().any(|a| a == "--virtualization"));
         assert!(!args.iter().any(|a| a == "--kernel"));
+        let arch = args.iter().position(|a| a == "--arch").unwrap();
+        assert_eq!(args[arch + 1], "arm64");
+        assert_eq!(args.last().unwrap(), "nbac-builder:abc");
+    }
+
+    #[test]
+    fn create_args_rosetta_selects_amd64() {
+        let machine = Machine {
+            rosetta: true,
+            ..Machine::default()
+        };
+        let args = create_args(&machine, "nbac-builder:abc");
+        let arch = args.iter().position(|a| a == "--arch").unwrap();
+        assert_eq!(args[arch + 1], "amd64");
         assert_eq!(args.last().unwrap(), "nbac-builder:abc");
     }
 

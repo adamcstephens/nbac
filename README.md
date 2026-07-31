@@ -1,8 +1,8 @@
 # nbac
 
 **N**ix **b**uilder on **A**pple **c**ontainer: an on-demand, idle-shutdown
-`aarch64-linux` remote builder for Nix on macOS, managed by a single Rust CLI
-and a thin nix-darwin module.
+`aarch64-linux` (and optionally `x86_64-linux`, via Rosetta) remote builder
+for Nix on macOS, managed by a single Rust CLI and a thin nix-darwin module.
 
 Run `nix build` for an `aarch64-linux` derivation and nbac boots a
 lightweight VM through Apple's `container` runtime, builds there, and powers
@@ -62,9 +62,22 @@ first build triggers the same cold path lazily.)
 
 Useful options under `services.nbac`: `machine.{name,cpus,memory}`,
 `idle.{enable,timeoutSeconds}`, `image.{containerfile,buildContext}`,
-`stateDir`, `virtualization.enable`, and builder scheduling (`systems`,
-`maxJobs`, `speedFactor`, `supportedFeatures`, `mandatoryFeatures`,
-`protocol`).
+`stateDir`, `rosetta.enable`, `virtualization.enable`, and builder
+scheduling (`systems`, `maxJobs`, `speedFactor`, `supportedFeatures`,
+`mandatoryFeatures`, `protocol`).
+
+## x86_64-linux via Rosetta
+
+`services.nbac.rosetta.enable` (default off) registers the builder for
+`x86_64-linux` too. Apple `container` attaches Rosetta only to machines
+whose platform is `linux/amd64`, so the option builds the image and creates
+the machine as that platform. The kernel is arm64 either way, and the image
+keeps its native aarch64 Nix with `extra-platforms = x86_64-linux`:
+`aarch64-linux` builds run at full native speed, `x86_64-linux` builds run
+through Rosetta's binfmt handler. Rosetta must be installed on the host
+(`softwareupdate --install-rosetta`). Toggling the option changes the image
+generation, so the machine is recreated — deleting its guest `/nix` store —
+with the usual warning.
 
 ## Nested virtualization
 

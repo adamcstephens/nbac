@@ -27,6 +27,11 @@ pub fn compute(config: &Config) -> Result<String> {
 
     hash_field(&mut hasher, "ssh.user", config.ssh.user.as_bytes());
     hash_field(&mut hasher, "ssh.port", &config.ssh.port.to_be_bytes());
+    hash_field(
+        &mut hasher,
+        "machine.arch",
+        config.machine.arch().as_bytes(),
+    );
 
     let digest: String = hasher
         .finalize()
@@ -129,6 +134,15 @@ mod tests {
         let mut config = test_config(&dir);
         let before = compute(&config).unwrap();
         config.ssh.user = "other".into();
+        assert_ne!(before, compute(&config).unwrap());
+    }
+
+    #[test]
+    fn rosetta_change_changes_generation() {
+        let dir = temp_dir("rosetta");
+        let mut config = test_config(&dir);
+        let before = compute(&config).unwrap();
+        config.machine.rosetta = true;
         assert_ne!(before, compute(&config).unwrap());
     }
 

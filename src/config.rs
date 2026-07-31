@@ -32,8 +32,17 @@ pub struct Machine {
     pub name: String,
     pub cpus: u32,
     pub memory: String,
+    pub rosetta: bool,
     pub virtualization: bool,
     pub kernel: Option<PathBuf>,
+}
+
+impl Machine {
+    /// The runtime enables Rosetta only for amd64 machines, so the rosetta
+    /// option selects the image and machine platform.
+    pub fn arch(&self) -> &'static str {
+        if self.rosetta { "amd64" } else { "arm64" }
+    }
 }
 
 impl Default for Machine {
@@ -42,6 +51,7 @@ impl Default for Machine {
             name: "nbac".into(),
             cpus: 4,
             memory: "6G".into(),
+            rosetta: false,
             virtualization: false,
             kernel: None,
         }
@@ -202,6 +212,8 @@ mod tests {
 
         assert_eq!(config.machine.name, "nbac");
         assert_eq!(config.machine.memory, "6G");
+        assert!(!config.machine.rosetta);
+        assert_eq!(config.machine.arch(), "arm64");
         assert!(!config.machine.virtualization);
         assert!(config.machine.kernel.is_none());
         assert!(config.image.build_context.is_none());

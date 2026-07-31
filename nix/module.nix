@@ -12,6 +12,9 @@ let
     machine = {
       inherit (cfg.machine) name cpus memory;
     }
+    // lib.optionalAttrs cfg.rosetta.enable {
+      rosetta = true;
+    }
     // lib.optionalAttrs cfg.virtualization.enable {
       virtualization = true;
       kernel = toString cfg.virtualization.kernelPackage;
@@ -73,6 +76,15 @@ in
         default = "6G";
         description = "Memory allocation, with an optional K/M/G/T/P suffix.";
       };
+    };
+
+    rosetta = {
+      enable = lib.mkEnableOption ''
+        x86_64-linux builds via Rosetta. The image and machine switch to the
+        linux/amd64 platform — the only mode in which `container` attaches
+        Rosetta — while the guest Nix stays native aarch64-linux and gains
+        `extra-platforms = x86_64-linux`. Toggling recreates the machine,
+        which deletes its /nix store'';
     };
 
     virtualization = {
@@ -154,7 +166,8 @@ in
 
     systems = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ "aarch64-linux" ];
+      default = [ "aarch64-linux" ] ++ lib.optional cfg.rosetta.enable "x86_64-linux";
+      defaultText = lib.literalExpression ''[ "aarch64-linux" ] ++ lib.optional config.services.nbac.rosetta.enable "x86_64-linux"'';
       description = "Systems the builder is registered for.";
     };
 
