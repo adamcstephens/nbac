@@ -1,6 +1,14 @@
 #!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# The runtime overmounts OCI-default masked/read-only /proc paths, leaving
+# /proc "not fully visible"; Nix then disables sandboxing and its fallback
+# builder cannot auto-allocate uids. The VM is the isolation boundary here,
+# so unmask.
+cut -d' ' -f2 /proc/mounts | grep '^/proc/' | while read -r mask; do
+    umount "$mask"
+done
+
 mkdir -p /run/service /var/log/nbac
 cp -a /etc/s6/sv/. /run/service/
 exec s6-svscan /run/service
