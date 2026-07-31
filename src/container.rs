@@ -1,6 +1,7 @@
-//! Typed wrapper around the Apple `container` CLI (verified against 1.1.0).
+//! Typed wrapper around the Apple `container` CLI, pinned to one supported
+//! release at a time.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, ExitStatus, Output, Stdio};
 
@@ -9,6 +10,10 @@ use serde::de::DeserializeOwned;
 
 use crate::config;
 
+/// The one `container` release nbac supports; behavior of the CLI (argument
+/// shapes, error strings, kernel handling) shifts between releases.
+pub const SUPPORTED_VERSION: &str = "1.2.0";
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("cannot run `{binary}`: {source}")]
@@ -16,8 +21,12 @@ pub enum Error {
         binary: String,
         source: std::io::Error,
     },
+    #[error("unsupported `container` version {found}; nbac supports {SUPPORTED_VERSION}")]
+    UnsupportedVersion { found: String },
     #[error("container services are not running: {stderr}")]
     RuntimeDown { stderr: String },
+    #[error("no default kernel is configured: {stderr}")]
+    NoDefaultKernel { stderr: String },
     #[error("not found: {stderr}")]
     NotFound { stderr: String },
     #[error("machine is still booting: {stderr}")]
@@ -107,12 +116,31 @@ impl Runtime {
         }
     }
 
+    /// Preflight: `--version` is answered by the CLI itself (no services
+    /// needed), so a mismatch surfaces before anything touches state.
+    pub fn check_version(&self) -> Result<(), Error> {
+        let output = self.output(&["--version"])?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        match parse_version(&stdout) {
+            Some(SUPPORTED_VERSION) => Ok(()),
+            found => Err(Error::UnsupportedVersion {
+                found: found.unwrap_or(stdout.trim()).to_string(),
+            }),
+        }
+    }
+
     pub fn system_status(&self) -> Result<SystemStatus, Error> {
         self.output_json(&["system", "status", "--format", "json"])
     }
 
     pub fn system_start(&self) -> Result<(), Error> {
         self.output(&["system", "start"]).map(|_| ())
+    }
+
+    /// Download and install the default kernel builds and machines boot
+    /// with. Streamed: it fetches a multi-hundred-megabyte archive.
+    fn kernel_set_recommended(&self) -> Result<(), Error> {
+        self.streamed(&["system", "kernel", "set", "--recommended"])
     }
 
     pub fn machine_inspect(&self, name: &str) -> Result<Option<MachineInfo>, Error> {
@@ -248,15 +276,26 @@ impl Runtime {
     }
 
     /// The one shared recovery routine: if a call fails because the
-    /// `container` services are down, start them and retry once.
+    /// `container` services are down or no default kernel is installed
+    /// (fresh 1.2.0 installs ship without one), fix that and retry, each
+    /// remedy at most once.
     fn recovering<T>(&self, f: impl Fn(&Self) -> Result<T, Error>) -> Result<T, Error> {
-        match f(self) {
-            Err(Error::RuntimeDown { .. }) => {
-                crate::ui::step("starting container services");
-                self.system_start()?;
-                f(self)
+        let mut started = false;
+        let mut kernel_set = false;
+        loop {
+            match f(self) {
+                Err(Error::RuntimeDown { .. }) if !started => {
+                    started = true;
+                    crate::ui::step("starting container services");
+                    self.system_start()?;
+                }
+                Err(Error::NoDefaultKernel { .. }) if !kernel_set => {
+                    kernel_set = true;
+                    crate::ui::step("installing the recommended default kernel");
+                    self.kernel_set_recommended()?;
+                }
+                result => return result,
             }
-            result => result,
         }
     }
 
@@ -293,25 +332,56 @@ impl Runtime {
     }
 
     /// Run with stdout/stderr streamed to the user, for long operations
-    /// (image builds, machine creation) whose progress matters.
+    /// (image builds, machine creation) whose progress matters. Stderr is
+    /// teed while streaming so failures can still be classified.
     fn streamed(&self, args: &[&str]) -> Result<(), Error> {
-        let status = self
+        let mut child = self
             .command(args)
             .stdin(Stdio::null())
-            .status()
+            .stderr(Stdio::piped())
+            .spawn()
             .map_err(|source| Error::Spawn {
                 binary: self.binary.clone(),
                 source,
             })?;
+        let mut pipe = child.stderr.take().unwrap();
+        let tee = std::thread::spawn(move || {
+            let mut captured = Vec::new();
+            let mut buf = [0u8; 8192];
+            while let Ok(n) = pipe.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                let _ = std::io::stderr().write_all(&buf[..n]);
+                captured.extend_from_slice(&buf[..n]);
+            }
+            captured
+        });
+        let status = child.wait().map_err(|source| Error::Spawn {
+            binary: self.binary.clone(),
+            source,
+        })?;
+        let stderr = tee.join().unwrap_or_default();
         if status.success() {
-            Ok(())
-        } else {
-            Err(Error::Failed {
-                command: self.command_line(args),
+            return Ok(());
+        }
+        let output = Output {
+            status,
+            stdout: Vec::new(),
+            stderr,
+        };
+        // The user already watched the output scroll by; don't repeat it in
+        // the generic failure message.
+        Err(match classify(self.command_line(args), &output) {
+            Error::Failed {
+                command, status, ..
+            } => Error::Failed {
+                command,
                 status,
                 stderr: "see output above".into(),
-            })
-        }
+            },
+            classified => classified,
+        })
     }
 
     fn output_json<T: DeserializeOwned>(&self, args: &[&str]) -> Result<T, Error> {
@@ -389,10 +459,19 @@ fn resolve(binary: &str) -> String {
         .unwrap_or_else(|| binary.into())
 }
 
+/// `container --version` prints "container CLI version 1.2.0 (build: …)".
+fn parse_version(stdout: &str) -> Option<&str> {
+    let mut tokens = stdout.split_whitespace();
+    tokens.find(|token| *token == "version")?;
+    tokens.next()
+}
+
 fn classify(command: String, output: &Output) -> Error {
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let lower = stderr.to_lowercase();
-    if lower.contains("notfound") || lower.contains("not found") {
+    if lower.contains("default kernel not configured") {
+        Error::NoDefaultKernel { stderr }
+    } else if lower.contains("notfound") || lower.contains("not found") {
         Error::NotFound { stderr }
     } else if lower.contains("inappropriate ioctl") {
         // `machine run` against a machine that is mid-boot fails with this
@@ -414,6 +493,27 @@ fn classify(command: String, output: &Output) -> Error {
 mod tests {
     use super::*;
     use crate::config::Machine;
+
+    #[test]
+    fn parses_container_version() {
+        assert_eq!(
+            parse_version("container CLI version 1.2.0 (build: release, commit: unspeci)\n"),
+            Some("1.2.0")
+        );
+        assert_eq!(parse_version("garbage"), None);
+    }
+
+    #[test]
+    fn classifies_missing_default_kernel_before_notfound() {
+        use std::os::unix::process::ExitStatusExt;
+        let output = Output {
+            status: ExitStatus::from_raw(1 << 8),
+            stdout: Vec::new(),
+            stderr: br#"Error: notFound: "default kernel not configured for architecture arm64, please use the `container system kernel set` command to configure it""#.to_vec(),
+        };
+        let error = classify("container build".into(), &output);
+        assert!(matches!(error, Error::NoDefaultKernel { .. }));
+    }
 
     #[test]
     fn create_args_default_has_no_virtualization() {

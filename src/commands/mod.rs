@@ -85,6 +85,7 @@ pub fn cmd_reset(config: &Path) -> Result<()> {
 }
 
 fn ensure_services(runtime: &Runtime) -> Result<()> {
+    runtime.check_version()?;
     match runtime.system_status() {
         Ok(status) if status.status == "running" => Ok(()),
         _ => {
