@@ -216,6 +216,14 @@ in
         assertion = pkgs.stdenv.hostPlatform.system == "aarch64-darwin";
         message = "services.nbac only supports aarch64-darwin";
       }
+      {
+        assertion = !(cfg.rosetta.enable && cfg.virtualization.enable);
+        message = ''
+          services.nbac.rosetta and services.nbac.virtualization are mutually
+          exclusive: `container` (as of 1.2.0) assumes a custom kernel matches
+          the machine platform (linux/amd64) and fails to boot the machine.
+        '';
+      }
     ];
 
     services.nbac.supportedFeatures = [ "uid-range" ];

@@ -79,6 +79,11 @@ through Rosetta's binfmt handler. Rosetta must be installed on the host
 generation, so the machine is recreated — deleting its guest `/nix` store —
 with the usual warning.
 
+Incompatible with `virtualization.enable` for now: `container` (as of 1.2.0)
+assumes a custom kernel matches the machine platform and cannot boot an
+amd64-platform machine with the (aarch64) KVM kernel; the module asserts
+against the combination.
+
 ## Nested virtualization
 
 `services.nbac.virtualization.enable` (default off) exposes `/dev/kvm` inside
