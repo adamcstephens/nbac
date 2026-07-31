@@ -233,9 +233,9 @@ user runs `nbac setup` once (or just triggers a build and lets the cold path
 do it).
 
 Apple `container` is expected to be installed system-wide (Apple's signed
-pkg or the Homebrew cask; 1.1.0 at time of writing) and resolved from PATH.
-The module's `containerPackage` option (default `null`) can instead install
-`pkgs.container` once it is validated end to end.
+pkg in `/usr/local/bin` or the Homebrew cask in `/opt/homebrew/bin`) and
+resolved from PATH. The module's `containerPackage` option (default `null`)
+can instead install `pkgs.container` once it is validated end to end.
 
 ## Security model
 
@@ -304,6 +304,10 @@ comes from the system install by default (see module section).
   root. When nbac runs with euid 0 it wraps every `container` invocation in
   `launchctl asuser <uid> sudo --user #<uid> --set-home`, deriving the uid
   from the state directory's owner.
+- nix-daemon inherits launchd's default PATH (`/usr/bin:/bin:/usr/sbin:/sbin`),
+  so the package wrapper suffixes both `container` install locations. Without
+  one of them the ProxyCommand dies with ENOENT before it can reach the
+  runtime, and the build fails as "failed to start SSH connection".
 - `machine inspect`'s `ipAddress` was once observed stale (reporting .2
   while the guest held .3) — but only in a session where the vmnet plugin
   had been restarted underneath a running machine. In normal operation,
