@@ -1,6 +1,6 @@
 [package]
 name = "nbac"
-version = "0.20260805.0"
+version = "0.20260807.0"
 edition = "2024"
 
 [dependencies]

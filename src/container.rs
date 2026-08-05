@@ -1,5 +1,5 @@
 //! Typed wrapper around the Apple `container` CLI, pinned to one supported
-//! release at a time.
+//! release series at a time.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -10,9 +10,10 @@ use serde::de::DeserializeOwned;
 
 use crate::config;
 
-/// The one `container` release nbac supports; behavior of the CLI (argument
-/// shapes, error strings, kernel handling) shifts between releases.
-pub const SUPPORTED_VERSION: &str = "1.2.0";
+/// The `container` release series nbac supports; behavior of the CLI (argument
+/// shapes, error strings, kernel handling) shifts between minor releases, but
+/// patch releases within a series stay compatible.
+pub const SUPPORTED_SERIES: &str = "1.2";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -21,7 +22,7 @@ pub enum Error {
         binary: String,
         source: std::io::Error,
     },
-    #[error("unsupported `container` version {found}; nbac supports {SUPPORTED_VERSION}")]
+    #[error("unsupported `container` version {found}; nbac supports {SUPPORTED_SERIES}.x")]
     UnsupportedVersion { found: String },
     #[error("container services are not running: {stderr}")]
     RuntimeDown { stderr: String },
@@ -122,7 +123,7 @@ impl Runtime {
         let output = self.output(&["--version"])?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         match parse_version(&stdout) {
-            Some(SUPPORTED_VERSION) => Ok(()),
+            Some(found) if series(found) == SUPPORTED_SERIES => Ok(()),
             found => Err(Error::UnsupportedVersion {
                 found: found.unwrap_or(stdout.trim()).to_string(),
             }),
@@ -277,7 +278,7 @@ impl Runtime {
 
     /// The one shared recovery routine: if a call fails because the
     /// `container` services are down or no default kernel is installed
-    /// (fresh 1.2.0 installs ship without one), fix that and retry, each
+    /// (fresh 1.2.x installs ship without one), fix that and retry, each
     /// remedy at most once.
     fn recovering<T>(&self, f: impl Fn(&Self) -> Result<T, Error>) -> Result<T, Error> {
         let mut started = false;
@@ -459,11 +460,19 @@ fn resolve(binary: &str) -> String {
         .unwrap_or_else(|| binary.into())
 }
 
-/// `container --version` prints "container CLI version 1.2.0 (build: …)".
+/// `container --version` prints "container CLI version 1.2.1 (build: …)".
 fn parse_version(stdout: &str) -> Option<&str> {
     let mut tokens = stdout.split_whitespace();
     tokens.find(|token| *token == "version")?;
     tokens.next()
+}
+
+/// The major.minor prefix of a version, which is what compatibility turns on.
+fn series(version: &str) -> &str {
+    match version.match_indices('.').nth(1) {
+        Some((dot, _)) => &version[..dot],
+        None => version,
+    }
 }
 
 fn classify(command: String, output: &Output) -> Error {
@@ -497,10 +506,18 @@ mod tests {
     #[test]
     fn parses_container_version() {
         assert_eq!(
-            parse_version("container CLI version 1.2.0 (build: release, commit: unspeci)\n"),
-            Some("1.2.0")
+            parse_version("container CLI version 1.2.1 (build: release, commit: unspeci)\n"),
+            Some("1.2.1")
         );
         assert_eq!(parse_version("garbage"), None);
+    }
+
+    #[test]
+    fn series_matches_patch_releases_only() {
+        assert_eq!(series("1.2.0"), SUPPORTED_SERIES);
+        assert_eq!(series("1.2.1"), SUPPORTED_SERIES);
+        assert_ne!(series("1.3.0"), SUPPORTED_SERIES);
+        assert_ne!(series("1.20.0"), SUPPORTED_SERIES);
     }
 
     #[test]
