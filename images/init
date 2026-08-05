@@ -1,11 +1,15 @@
 #!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# The runtime overmounts OCI-default masked/read-only /proc paths, leaving
-# /proc "not fully visible"; Nix then disables sandboxing and its fallback
-# builder cannot auto-allocate uids. The VM is the isolation boundary here,
-# so unmask.
+# The runtime overmounts OCI-default masked/read-only paths with locked
+# submounts, which stop Nix's sandbox from mounting a fresh procfs/sysfs. The
+# VM is the isolation boundary here, so unmask them. Everything under /proc is
+# a mask; under /sys only the tmpfs masks (e.g. /sys/firmware) are, so leave
+# the real filesystems there (notably cgroup2, which use-cgroups needs).
 cut -d' ' -f2 /proc/mounts | grep '^/proc/' | while read -r mask; do
+    umount "$mask"
+done
+awk '$2 ~ /^\/sys\// && $3 == "tmpfs" { print $2 }' /proc/mounts | while read -r mask; do
     umount "$mask"
 done
 
