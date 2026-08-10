@@ -8,15 +8,22 @@
       url = "github:nix-darwin/nix-darwin";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    drowse = {
+      url = "github:adamcstephens/drowse?ref=push-mvosvrtpsrpq";
+      inputs = {
+        flake-parts.follows = "flake-parts";
+        nixpkgs.follows = "nixpkgs";
+      };
+    };
   };
 
   outputs =
     inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
-        "x86_64-linux"
-        "aarch64-linux"
         "aarch64-darwin"
+        "aarch64-linux"
       ];
 
       flake.darwinModules = rec {
@@ -34,14 +41,12 @@
         {
           pkgs,
           lib,
+          self',
           system,
           ...
         }:
         let
-          nbac-unwrapped = pkgs.callPackage ./nix/package.nix { };
-          nbac = pkgs.callPackage ./nix/wrapper.nix {
-            inherit nbac-unwrapped;
-          };
+          manifest = lib.importTOML ./Cargo.toml;
         in
         {
           devShells.default = pkgs.mkShell {
@@ -59,18 +64,26 @@
 
           formatter = pkgs.nixfmt;
 
-          packages = {
+          packages = rec {
             default = nbac;
-            inherit nbac nbac-unwrapped;
+
+            nbac = pkgs.callPackage ./nix/wrapper.nix {
+              inherit nbac-unwrapped;
+            };
+
+            nbac-unwrapped = pkgs.callPackage ./nix/package.nix {
+              inherit manifest;
+              inherit (inputs) drowse;
+            };
           }
           // lib.optionalAttrs (system == "aarch64-linux") {
             nbac-kernel = pkgs.callPackage ./nix/kernel.nix { };
           };
 
           checks = {
-            build = nbac;
+            build = self'.packages.nbac;
 
-            clippy = nbac-unwrapped.overrideAttrs (old: {
+            clippy = self'.packages.nbac-unwrapped.overrideAttrs (old: {
               pname = "nbac-clippy";
               nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.clippy ];
               buildPhase = ''

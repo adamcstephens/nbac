@@ -1,11 +1,13 @@
 {
+  drowse,
   lib,
-  rustPlatform,
+  manifest,
+  stdenv,
 }:
 
-rustPlatform.buildRustPackage {
-  pname = "nbac";
-  version = (lib.importTOML ../Cargo.toml).package.version;
+drowse.lib.${stdenv.hostPlatform.system}.crate2nix {
+  pname = manifest.package.name;
+  inherit (manifest.package) version;
 
   src =
     with lib.fileset;
@@ -17,8 +19,6 @@ rustPlatform.buildRustPackage {
         ../src
       ];
     };
-
-  cargoLock.lockFile = ../Cargo.lock;
 
   meta.mainProgram = "nbac";
 }
