@@ -226,7 +226,11 @@ in
       }
     ];
 
-    services.nbac.supportedFeatures = [ "uid-range" ];
+    services.nbac.supportedFeatures = [
+      "ca-derivations"
+      "recursive-nix"
+      "uid-range"
+    ];
 
     environment.systemPackages = [
       cfg.package
