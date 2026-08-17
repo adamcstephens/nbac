@@ -47,8 +47,11 @@
         }:
         let
           manifest = lib.importTOML ./Cargo.toml;
+          bump-nix = pkgs.callPackage ./nix/bump-nix.nix { };
         in
         {
+          apps.bump-nix.program = "${bump-nix}/bin/bump-nix";
+
           devShells.default = pkgs.mkShell {
             packages = [
               pkgs.just
