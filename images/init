@@ -13,6 +13,10 @@ awk '$2 ~ /^\/sys\// && $3 == "tmpfs" { print $2 }' /proc/mounts | while read -r
     umount "$mask"
 done
 
+for dev in /dev/kvm /dev/net/tun /dev/vsock /dev/fuse; do
+    [ -e "$dev" ] && chmod 0666 "$dev"
+done
+
 mkdir -p /run/service /var/log/nbac
 cp -a /etc/s6/sv/. /run/service/
 exec s6-svscan /run/service
