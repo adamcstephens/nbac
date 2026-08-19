@@ -35,6 +35,7 @@ RUN adduser -D -s /bin/sh "${SSH_USER}" \
 
 COPY sshd_config /etc/ssh/sshd_config
 COPY nix.conf /etc/nix/nix.conf
+COPY nix.sh /etc/profile.d/nix.sh
 COPY nix-daemon /usr/bin/nix-daemon
 COPY nbac-idle-watchdog /usr/local/bin/nbac-idle-watchdog
 COPY sv /etc/s6/sv

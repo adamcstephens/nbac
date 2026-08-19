@@ -198,6 +198,11 @@ The number-one performance complaint about hex-box's `hb`/proxy chain.
   `/etc/nbac/runtime.toml` (idle enable/timeout) — so idle-timeout changes do
   not force an image rebuild. The injection exec brings sshd up (or restarts
   it) with `s6-svc -ru`.
+- Nix's `bin` is on the PATH of both session kinds — `/etc/profile.d/nix.sh`
+  for login shells, `SetEnv` in `sshd_config` for `ssh host <command>`, which
+  reads no profile. Appended after `/usr/bin`, never before: the profile also
+  contains `nix-daemon`, and the ssh-ng builder protocol needs that name to
+  resolve to the sudo wrapper.
 - Authorized keys live in `/etc/ssh/authorized_keys.d/%u`, not in `$HOME`:
   with a mounted home the user's `.ssh` is the host's, which injection must
   neither read nor overwrite. sshd admits `AllowGroups nbac-ssh` rather than

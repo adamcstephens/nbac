@@ -8,6 +8,9 @@ KbdInteractiveAuthentication no
 # injection must neither read nor overwrite.
 AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u
 UseDNS no
+# `ssh host <command>` reads no profile, so carry the same PATH
+# /etc/profile.d/nix.sh gives login shells, nix last for the same reason.
+SetEnv PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/nix/var/nix/profiles/default/bin
 # Nix opens bursts of parallel connections from one source address; the
 # default MaxStartups drops part of the burst and per-source penalties then
 # lock the address out entirely.
