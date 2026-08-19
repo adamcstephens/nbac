@@ -10,7 +10,7 @@
     };
 
     drowse = {
-      url = "github:adamcstephens/drowse?ref=push-mvosvrtpsrpq";
+      url = "github:figsoda/drowse";
       inputs = {
         flake-parts.follows = "flake-parts";
         nixpkgs.follows = "nixpkgs";
