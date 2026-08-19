@@ -25,6 +25,10 @@ pub fn compute(config: &Config) -> Result<String> {
             .with_context(|| format!("cannot hash build context {}", context.display()))?;
     }
 
+    for package in &config.image.packages {
+        hash_field(&mut hasher, "image.packages", package.as_bytes());
+    }
+
     hash_field(&mut hasher, "ssh.user", config.ssh.user.as_bytes());
     hash_field(&mut hasher, "ssh.port", &config.ssh.port.to_be_bytes());
     hash_field(
@@ -148,6 +152,15 @@ mod tests {
         let mut config = test_config(&dir);
         let before = compute(&config).unwrap();
         config.home.user = Some("adam".into());
+        assert_ne!(before, compute(&config).unwrap());
+    }
+
+    #[test]
+    fn packages_change_generation() {
+        let dir = temp_dir("packages");
+        let mut config = test_config(&dir);
+        let before = compute(&config).unwrap();
+        config.image.packages = vec!["flake#git".into()];
         assert_ne!(before, compute(&config).unwrap());
     }
 

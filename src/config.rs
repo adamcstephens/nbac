@@ -73,6 +73,10 @@ pub struct Image {
     pub build_context: Option<PathBuf>,
     #[serde(default = "default_tag_prefix")]
     pub tag_prefix: String,
+    /// Flake installables the image build installs into the guest's `nbac`
+    /// profile, on PATH for interactive logins.
+    #[serde(default)]
+    pub packages: Vec<String>,
 }
 
 fn default_tag_prefix() -> String {
@@ -189,6 +193,7 @@ mod tests {
             containerfile = "/nix/store/aaa-Containerfile"
             build_context = "/nix/store/aaa-context"
             tag_prefix = "nbac-builder"
+            packages = ["github:nixos/nixpkgs/abc#git"]
 
             [ssh]
             user = "builder"
@@ -210,6 +215,7 @@ mod tests {
 
         assert_eq!(config.machine.cpus, 4);
         assert_eq!(config.image.tag_prefix, "nbac-builder");
+        assert_eq!(config.image.packages, ["github:nixos/nixpkgs/abc#git"]);
         assert_eq!(config.ssh.user, "builder");
         assert!(config.idle.enable);
     }
@@ -234,6 +240,7 @@ mod tests {
         assert!(!config.machine.virtualization);
         assert!(config.machine.kernel.is_none());
         assert!(config.image.build_context.is_none());
+        assert!(config.image.packages.is_empty());
         assert_eq!(config.ssh.port, 22);
         assert_eq!(config.idle.timeout_seconds, 300);
         assert_eq!(config.runtime.container_binary, "container");

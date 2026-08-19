@@ -30,6 +30,9 @@ pub fn ensure_image(runtime: &Runtime, config: &Config) -> Result<String> {
     if let Some(user) = &config.home.user {
         build_args.push(("HOME_USER", user.clone()));
     }
+    if !config.image.packages.is_empty() {
+        build_args.push(("GUEST_PACKAGES", config.image.packages.join(" ")));
+    }
     runtime.build_image(
         &tag,
         config.machine.arch(),

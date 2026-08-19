@@ -33,6 +33,7 @@
           {
             imports = [ ./nix/module.nix ];
             services.nbac.package = lib.mkDefault inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.nbac;
+            services.nbac.image.packagesFlake = lib.mkDefault "github:nixos/nixpkgs/${inputs.nixpkgs.rev}";
             services.nbac.virtualization.kernelPackage = lib.mkDefault inputs.self.packages.aarch64-linux.nbac-kernel;
           };
       };

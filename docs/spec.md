@@ -94,6 +94,7 @@ memory = "6G"
 containerfile = "/nix/store/…-Containerfile"  # or a user path
 build_context = "/nix/store/…-context"        # optional
 tag_prefix = "nbac-builder"
+packages = ["github:nixos/nixpkgs/…#git"]     # optional; guest profile extras
 
 [ssh]
 user = "builder"
@@ -203,6 +204,14 @@ The number-one performance complaint about hex-box's `hb`/proxy chain.
   reads no profile. Appended after `/usr/bin`, never before: the profile also
   contains `nix-daemon`, and the ssh-ng builder protocol needs that name to
   resolve to the sudo wrapper.
+- `image.packages` installs extra flake installables into a second profile,
+  `/nix/var/nix/profiles/nbac`, appended to the PATH of both session kinds
+  ahead of the default profile. A profile of its own because the tarball
+  install points `default` straight at nix's store path, with no generation
+  behind it: installing into that one replaces nix rather than extending it.
+  The image build resolves and substitutes them inside the guest, which is
+  what keeps the interface aarch64-linux-native without cross-compiling or
+  copying a closure into the build context.
 - Authorized keys live in `/etc/ssh/authorized_keys.d/%u`, not in `$HOME`:
   with a mounted home the user's `.ssh` is the host's, which injection must
   neither read nor overwrite. sshd admits `AllowGroups nbac-ssh` rather than
@@ -244,7 +253,8 @@ off. Reads settings from the runtime-injected file with safe defaults.
 ## nix-darwin module
 
 Options (roughly mirroring the TOML): `enable`, `machine.{name,cpus,memory}`,
-`rosetta.enable`, `image.{containerfile,buildContext}`, `ssh.{user,port,hostAlias}`,
+`rosetta.enable`, `image.{containerfile,buildContext,packages,packagesFlake}`,
+`ssh.{user,port,hostAlias}`,
 `home.{enable,user}`, `idle.{enable,timeoutSeconds}`, `stateDir`, plus builder-scheduling options
 passed straight to `nix.buildMachines` (`systems`, `maxJobs`, `speedFactor`,
 `supportedFeatures`, `mandatoryFeatures`, `protocol`).
@@ -381,5 +391,6 @@ comes from the system install by default (see module section).
 | Ops surface | `status` probes only; `doctor`/`test`/`gc`/`logs` dropped in phase 4 |
 | Async runtime | None |
 | Host home in the guest | Opt-in `home.enable`: `--home-mount rw` plus an interactive login as the runtime-created host account, trusted by the guest Nix; the builder account stays dedicated and untouched |
+| Extra guest packages | `image.packages` as flake installables resolved during the image build, into a profile beside `default`; a `listOf package` option was rejected — the module evaluates on aarch64-darwin, so the packages would need cross-compilation or an aarch64-linux closure copied into the build context |
 | x86_64-linux | Opt-in `rosetta.enable`: amd64-platform image and machine, the only mode where `container` attaches Rosetta; guest Nix stays native aarch64 with `extra-platforms = x86_64-linux` |
 | CI | `nix flake check` only until a forge is chosen |

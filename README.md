@@ -61,7 +61,7 @@ boots the machine, and checks readiness. (Skipping this is fine too — the
 first build triggers the same cold path lazily.)
 
 Useful options under `services.nbac`: `machine.{name,cpus,memory}`,
-`idle.{enable,timeoutSeconds}`, `image.{containerfile,buildContext}`,
+`idle.{enable,timeoutSeconds}`, `image.{containerfile,buildContext,packages}`,
 `stateDir`, `rosetta.enable`, `virtualization.enable`, `home.enable`, and
 builder scheduling (`systems`, `maxJobs`, `speedFactor`,
 `supportedFeatures`, `mandatoryFeatures`, `protocol`).
@@ -104,6 +104,23 @@ is recreated — deleting its guest `/nix` store — with the usual warning. And
 symlinks under the mount that point outside your home dangle in the guest, so
 `~/.nix-profile` and `result` links resolve against the guest's store, not the
 host's.
+
+`services.nbac.image.packages` puts tools on the PATH of those sessions:
+
+```nix
+services.nbac.image.packages = [
+  "git"
+  "ripgrep"
+];
+```
+
+Bare names resolve against the nixpkgs revision nbac is locked to; override
+that with `image.packagesFlake`, or give a full installable
+(`"github:helix-editor/helix#helix"`) to pin one package elsewhere. The image
+build installs them inside the guest into `/nix/var/nix/profiles/nbac`, a
+profile of its own beside the one the Nix tarball creates. Distributed builds
+never see them — this is for working in the guest. Changing the list changes
+the image generation, with the usual machine recreation.
 
 ## Nested virtualization
 

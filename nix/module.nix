@@ -8,6 +8,8 @@ let
   cfg = config.services.nbac;
   settingsFormat = pkgs.formats.toml { };
 
+  installable = spec: if lib.hasInfix "#" spec then spec else "${cfg.image.packagesFlake}#${spec}";
+
   configToml = settingsFormat.generate "nbac-config.toml" {
     machine = {
       inherit (cfg.machine) name cpus memory;
@@ -21,6 +23,7 @@ let
     };
     image = {
       containerfile = toString cfg.image.containerfile;
+      packages = map installable cfg.image.packages;
     }
     // lib.optionalAttrs (cfg.image.buildContext != null) {
       build_context = toString cfg.image.buildContext;
@@ -120,6 +123,36 @@ in
         type = lib.types.nullOr lib.types.path;
         default = ../images;
         description = "Build context directory; null uses the Containerfile's directory.";
+      };
+
+      packages = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [
+          "git"
+          "ripgrep"
+        ];
+        description = ''
+          Extra packages installed into the guest profile
+          `/nix/var/nix/profiles/nbac`, on PATH for `nbac ssh` logins.
+          Attribute names are resolved against `image.packagesFlake`; a value
+          containing `#` is taken as a full flake installable. The image build
+          substitutes them inside the guest, so they must build for
+          aarch64-linux. Distributed builds do not see them. Changing the list
+          rebuilds the image, which recreates the machine and deletes its
+          /nix store.
+        '';
+      };
+
+      packagesFlake = lib.mkOption {
+        type = lib.types.str;
+        example = "github:nixos/nixpkgs/nixos-unstable-small";
+        defaultText = lib.literalExpression ''"github:nixos/nixpkgs/''${nixpkgs.rev}"'';
+        description = ''
+          Flake reference the bare names in `image.packages` are resolved
+          against, evaluated inside the guest. The flake pins this to the
+          nixpkgs revision nbac itself is locked to.
+        '';
       };
     };
 

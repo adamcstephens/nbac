@@ -6,6 +6,7 @@ ARG NIX_SHA256=4d0302a2910f5eec1c33b8deef634f04899a75737e7001ec49908d003ae5efda
 ARG SSH_USER=builder
 ARG SSH_PORT=22
 ARG HOME_USER=
+ARG GUEST_PACKAGES=
 
 RUN apk add --no-cache openssh-server s6 sudo socat iproute2 xz curl
 
@@ -58,6 +59,14 @@ RUN rm /sbin/init \
     fi \
     && if [ -n "${HOME_USER}" ]; then \
         echo "trusted-users = root ${HOME_USER}" >> /etc/nix/nix.conf; \
+    fi
+
+# A profile of its own: the tarball install points the default profile
+# straight at nix's own store path, with no generation behind it, so
+# installing into that one would replace nix instead of extending it.
+RUN if [ -n "${GUEST_PACKAGES}" ]; then \
+        /nix/var/nix/profiles/default/bin/nix profile install \
+            --profile /nix/var/nix/profiles/nbac ${GUEST_PACKAGES}; \
     fi
 
 CMD ["/sbin/init"]
