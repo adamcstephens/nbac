@@ -107,7 +107,7 @@ fn confirm(prompt: &str) -> Result<bool> {
 /// An ssh invocation with the pinned identity and host key and the given
 /// ProxyCommand; callers append the destination and command. The configured
 /// port is not passed: every ProxyCommand embeds it.
-fn ssh_command(config: &Config, proxy_command: &str) -> Command {
+fn ssh_command(config: &Config, user: &str, proxy_command: &str) -> Command {
     let mut cmd = Command::new("ssh");
     cmd.arg("-F")
         .arg("none")
@@ -128,7 +128,7 @@ fn ssh_command(config: &Config, proxy_command: &str) -> Command {
         .arg("-o")
         .arg("StrictHostKeyChecking=yes")
         .arg("-o")
-        .arg(format!("User={}", config.ssh.user));
+        .arg(format!("User={user}"));
     cmd
 }
 
@@ -140,7 +140,7 @@ pub fn cmd_ssh(config_path: &Path, args: &[String]) -> Result<()> {
         exe.display(),
         config_path.display()
     );
-    let mut cmd = ssh_command(&config, &proxy);
+    let mut cmd = ssh_command(&config, config.login_user(), &proxy);
     cmd.arg(&config.ssh.host_alias).args(args);
     Err(anyhow::Error::new(cmd.exec()).context("cannot exec ssh"))
 }

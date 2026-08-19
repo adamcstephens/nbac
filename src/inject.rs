@@ -42,14 +42,27 @@ fn script(config: &Config) -> Result<String> {
 
     let user = &config.ssh.user;
     let port = config.ssh.port;
+    // The runtime creates the host user's account at boot, but locked with
+    // "!" (which sshd rejects even for pubkey auth) and in no group beyond
+    // its own, while sshd admits the group rather than the user.
+    let home_user = match &config.home.user {
+        Some(home_user) => format!(
+            r#"cat > "/etc/ssh/authorized_keys.d/{home_user}" <<'NBAC_EOF'
+{authorized_keys}NBAC_EOF
+chmod 644 "/etc/ssh/authorized_keys.d/{home_user}"
+sed -i "s|^{home_user}:!|{home_user}:*|" /etc/shadow
+id -nG "{home_user}" | grep -qw nbac-ssh || addgroup "{home_user}" nbac-ssh
+"#
+        ),
+        None => String::new(),
+    };
     Ok(format!(
         r#"set -eu
-install -d -m 700 "/home/{user}/.ssh"
-cat > "/home/{user}/.ssh/authorized_keys" <<'NBAC_EOF'
+install -d -m 755 /etc/ssh/authorized_keys.d
+cat > "/etc/ssh/authorized_keys.d/{user}" <<'NBAC_EOF'
 {authorized_keys}NBAC_EOF
-chmod 600 "/home/{user}/.ssh/authorized_keys"
-chown -R "{user}:{user}" "/home/{user}/.ssh"
-umask 077
+chmod 644 "/etc/ssh/authorized_keys.d/{user}"
+{home_user}umask 077
 cat > /etc/ssh/ssh_host_ed25519_key <<'NBAC_EOF'
 {host_key}NBAC_EOF
 cat > /etc/ssh/ssh_host_ed25519_key.pub <<'NBAC_EOF'
@@ -108,7 +121,40 @@ mod tests {
         assert!(script.contains("ssh-ed25519 AAAA builder\nNBAC_EOF"));
         assert!(script.contains("ssh-ed25519 BBBB host\nNBAC_EOF"));
         assert!(script.contains("timeout_seconds = 120"));
-        assert!(script.contains("/home/builder/.ssh"));
+        assert!(script.contains("/etc/ssh/authorized_keys.d/builder"));
+        assert!(!script.contains("addgroup"));
+    }
+
+    #[test]
+    fn script_admits_the_home_user_too() {
+        let dir =
+            std::env::temp_dir().join(format!("nbac-test-inject-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Containerfile"), "FROM alpine\n").unwrap();
+        let config: Config = toml::from_str(&format!(
+            r#"
+            [image]
+            containerfile = "{0}/Containerfile"
+
+            [home]
+            user = "adam"
+
+            [state]
+            dir = "{0}"
+            "#,
+            dir.display()
+        ))
+        .unwrap();
+
+        std::fs::write(config.state.builder_key_pub(), "ssh-ed25519 AAAA builder\n").unwrap();
+        std::fs::write(config.state.host_key(), "PRIVATE\n").unwrap();
+        std::fs::write(config.state.host_key_pub(), "ssh-ed25519 BBBB host\n").unwrap();
+
+        let script = script(&config).unwrap();
+        assert!(script.contains("/etc/ssh/authorized_keys.d/adam"));
+        assert!(script.contains(r#"addgroup "adam" nbac-ssh"#));
+        assert!(script.contains(r#"sed -i "s|^adam:!|adam:*|" /etc/shadow"#));
     }
 
     #[test]

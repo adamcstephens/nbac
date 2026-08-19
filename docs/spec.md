@@ -100,6 +100,9 @@ user = "builder"
 port = 22
 host_alias = "nbac"
 
+[home]
+user = "adam"                                  # optional; host user with a mounted home
+
 [state]
 dir = "/Users/adam/.local/state/nbac"          # keys, known_hosts, generation marker, lock
 
@@ -195,12 +198,36 @@ The number-one performance complaint about hex-box's `hb`/proxy chain.
   `/etc/nbac/runtime.toml` (idle enable/timeout) — so idle-timeout changes do
   not force an image rebuild. The injection exec brings sshd up (or restarts
   it) with `s6-svc -ru`.
+- Authorized keys live in `/etc/ssh/authorized_keys.d/%u`, not in `$HOME`:
+  with a mounted home the user's `.ssh` is the host's, which injection must
+  neither read nor overwrite. sshd admits `AllowGroups nbac-ssh` rather than
+  a user list, since the account for a mounted home is named after the host
+  user and unknown at image build time.
 
 Users may point `image.containerfile` at their own file. The documented
 contract for custom images: s6 supervision with scan directory
 `/run/service` and an `sshd` service the injection exec can `s6-svc -ru`, a
 supervised `nix-daemon`, the configured SSH user with the sudo rule, and the
 watchdog if idle shutdown is enabled.
+
+## Home mount
+
+Opt-in (`home.user`), off by default. `container machine` shares host
+filesystems only as all-or-nothing on the owning user's home
+(`--home-mount ro|rw|none`), and the runtime creates a matching guest account
+whose uid/gid come from the host — which is the point: files under the mount
+carry host ownership, so only that account can use them. Setting `home.user`
+therefore does three things at once: creates the machine with
+`--home-mount rw`, adds the account to `nbac-ssh` and gives it the builder
+key at injection time, and bakes `trusted-users = root <user>` into the guest
+`nix.conf` so Nix run *inside* the guest is not restricted.
+
+Distributed builds are unaffected: `nix.buildMachines` keeps using the
+dedicated `builder` account and its single sudo rule, and remote builds never
+see the mount (the closure is copied into the guest store and built in the
+sandbox). The mount is for working inside the guest, not for feeding host
+paths to the builder. `nbac ssh` logs in as the host user when the option is
+set, and as `builder` otherwise.
 
 ## Idle shutdown
 
@@ -213,7 +240,7 @@ off. Reads settings from the runtime-injected file with safe defaults.
 
 Options (roughly mirroring the TOML): `enable`, `machine.{name,cpus,memory}`,
 `rosetta.enable`, `image.{containerfile,buildContext}`, `ssh.{user,port,hostAlias}`,
-`idle.{enable,timeoutSeconds}`, `stateDir`, plus builder-scheduling options
+`home.{enable,user}`, `idle.{enable,timeoutSeconds}`, `stateDir`, plus builder-scheduling options
 passed straight to `nix.buildMachines` (`systems`, `maxJobs`, `speedFactor`,
 `supportedFeatures`, `mandatoryFeatures`, `protocol`).
 
@@ -244,6 +271,10 @@ can instead install `pkgs.container` once it is validated end to end.
 - Host key pinned via generated `known_hosts`; `StrictHostKeyChecking yes`.
 - Guest user has passwordless sudo for exactly one command:
   `nix-daemon --stdio`.
+- The home mount is opt-in and, when enabled, is read-write on the whole home
+  directory and makes its account a Nix trusted user. Both are grants to the
+  interactive account only; the builder account and its sudo rule are
+  unchanged.
 - No published ports; the guest sshd is reachable only on the host-only
   vmnet interface, and connections are initiated from the host. sshd raises
   `MaxStartups` and disables `PerSourcePenalties`: Nix opens bursts of
@@ -296,6 +327,12 @@ comes from the system install by default (see module section).
 - ~~Confirm `machine set` semantics~~ Resolved in phase 3: cpus/memory are
   adjustable on an existing machine, taking effect at the next restart; no
   recreation needed.
+- The runtime creates a guest account for the host user (uid/gid copied from
+  the host, home `/home/<user>`) on every machine, whatever `--home-mount`
+  says, and `machine run` without `--root` runs as it. The account is locked
+  with `!` in `/etc/shadow` and belongs to no supplementary group, so
+  injection unlocks it and adds it to `nbac-ssh` before sshd will accept a
+  key.
 - `machine create` returns before the guest is bootable; a `machine run` in
   that window fails transiently ("Inappropriate ioctl for device"), handled
   by bounded backoff in the container wrapper.
@@ -338,5 +375,6 @@ comes from the system install by default (see module section).
 | Module target | nix-darwin only |
 | Ops surface | `status` probes only; `doctor`/`test`/`gc`/`logs` dropped in phase 4 |
 | Async runtime | None |
+| Host home in the guest | Opt-in `home.enable`: `--home-mount rw` plus an interactive login as the runtime-created host account, trusted by the guest Nix; the builder account stays dedicated and untouched |
 | x86_64-linux | Opt-in `rosetta.enable`: amd64-platform image and machine, the only mode where `container` attaches Rosetta; guest Nix stays native aarch64 with `extra-platforms = x86_64-linux` |
 | CI | `nix flake check` only until a forge is chosen |

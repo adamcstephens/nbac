@@ -137,7 +137,7 @@ fn probe_ssh(ip: &str, port: u16) -> Probe {
 /// path cannot trigger.
 fn probe_store(config: &Config, ip: &str) -> Probe {
     let proxy = format!("/usr/bin/nc -G 3 {ip} {}", config.ssh.port);
-    let output = super::ssh_command(config, &proxy)
+    let output = super::ssh_command(config, &config.ssh.user, &proxy)
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh.host_alias)
         .args([

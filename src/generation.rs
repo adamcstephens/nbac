@@ -29,6 +29,11 @@ pub fn compute(config: &Config) -> Result<String> {
     hash_field(&mut hasher, "ssh.port", &config.ssh.port.to_be_bytes());
     hash_field(
         &mut hasher,
+        "home.user",
+        config.home.user.as_deref().unwrap_or_default().as_bytes(),
+    );
+    hash_field(
+        &mut hasher,
         "machine.arch",
         config.machine.arch().as_bytes(),
     );
@@ -134,6 +139,15 @@ mod tests {
         let mut config = test_config(&dir);
         let before = compute(&config).unwrap();
         config.ssh.user = "other".into();
+        assert_ne!(before, compute(&config).unwrap());
+    }
+
+    #[test]
+    fn home_user_change_changes_generation() {
+        let dir = temp_dir("home");
+        let mut config = test_config(&dir);
+        let before = compute(&config).unwrap();
+        config.home.user = Some("adam".into());
         assert_ne!(before, compute(&config).unwrap());
     }
 

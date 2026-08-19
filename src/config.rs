@@ -11,6 +11,8 @@ pub struct Config {
     pub image: Image,
     #[serde(default)]
     pub ssh: Ssh,
+    #[serde(default)]
+    pub home: Home,
     pub state: State,
     #[serde(default)]
     pub idle: Idle,
@@ -23,6 +25,12 @@ impl Config {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("cannot read config file {}", path.display()))?;
         toml::from_str(&text).with_context(|| format!("cannot parse {}", path.display()))
+    }
+
+    /// The account `nbac ssh` logs in as: the host user when their home is
+    /// mounted, otherwise the dedicated builder account.
+    pub fn login_user(&self) -> &str {
+        self.home.user.as_deref().unwrap_or(&self.ssh.user)
     }
 }
 
@@ -87,6 +95,15 @@ impl Default for Ssh {
             host_alias: "nbac".into(),
         }
     }
+}
+
+/// The host user whose home the machine mounts and whom `nbac ssh` logs in
+/// as. Unset leaves the machine without a home mount and every session on the
+/// builder account.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Home {
+    pub user: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -23,10 +23,13 @@ pub fn ensure_image(runtime: &Runtime, config: &Config) -> Result<String> {
             .context("Containerfile has no parent directory")?
             .to_path_buf(),
     };
-    let build_args = [
+    let mut build_args = vec![
         ("SSH_USER", config.ssh.user.clone()),
         ("SSH_PORT", config.ssh.port.to_string()),
     ];
+    if let Some(user) = &config.home.user {
+        build_args.push(("HOME_USER", user.clone()));
+    }
     runtime.build_image(
         &tag,
         config.machine.arch(),
@@ -45,7 +48,7 @@ pub fn ensure_machine(runtime: &Runtime, config: &Config, tag: &str) -> Result<(
     match runtime.machine_inspect(name)? {
         None => {
             ui::step(&format!("creating machine {name}"));
-            runtime.machine_create(&config.machine, tag)?;
+            runtime.machine_create(&config.machine, config.home.user.is_some(), tag)?;
         }
         Some(info) if !reference_matches(&info.image.reference, tag) => {
             ui::warn(&format!(
@@ -57,7 +60,7 @@ pub fn ensure_machine(runtime: &Runtime, config: &Config, tag: &str) -> Result<(
             }
             runtime.machine_delete(name)?;
             ui::step(&format!("creating machine {name}"));
-            runtime.machine_create(&config.machine, tag)?;
+            runtime.machine_create(&config.machine, config.home.user.is_some(), tag)?;
         }
         Some(info) => {
             reconcile_resources(runtime, config, &info)?;

@@ -30,6 +30,9 @@ let
       host_alias = cfg.ssh.hostAlias;
     };
     state.dir = cfg.stateDir;
+    home = lib.optionalAttrs cfg.home.enable {
+      user = cfg.home.user;
+    };
     idle = {
       inherit (cfg.idle) enable;
       timeout_seconds = cfg.idle.timeoutSeconds;
@@ -137,6 +140,26 @@ in
         type = lib.types.str;
         default = "nbac";
         description = "SSH host alias used by nix.buildMachines and the client config.";
+      };
+    };
+
+    home = {
+      enable = lib.mkEnableOption ''
+        mounting the host user's home directory into the machine. `nbac ssh`
+        then logs in as that user rather than the builder account, and the
+        guest trusts them as a Nix user. Distributed builds keep using the
+        builder account either way. Toggling recreates the machine, which
+        deletes its /nix store'';
+
+      user = lib.mkOption {
+        type = lib.types.str;
+        default = config.system.primaryUser;
+        defaultText = lib.literalExpression "config.system.primaryUser";
+        description = ''
+          Host user whose home is mounted. `container` derives the guest
+          account from the user owning the runtime, so this must be the user
+          running `nbac`.
+        '';
       };
     };
 

@@ -154,8 +154,13 @@ impl Runtime {
         first_machine(self.output_json(&["machine", "inspect", name]))
     }
 
-    pub fn machine_create(&self, machine: &config::Machine, image_tag: &str) -> Result<(), Error> {
-        let args = create_args(machine, image_tag);
+    pub fn machine_create(
+        &self,
+        machine: &config::Machine,
+        home_mount: bool,
+        image_tag: &str,
+    ) -> Result<(), Error> {
+        let args = create_args(machine, home_mount, image_tag);
         let argv: Vec<&str> = args.iter().map(String::as_str).collect();
         self.recovering(|rt| rt.streamed(&argv))
     }
@@ -401,7 +406,7 @@ impl Runtime {
 /// Argument vector for `container machine create`. Nested virtualization adds
 /// `--virtualization` and a `--kernel` pointing at a KVM-enabled image; the
 /// image reference stays last, after every option.
-fn create_args(machine: &config::Machine, image_tag: &str) -> Vec<String> {
+fn create_args(machine: &config::Machine, home_mount: bool, image_tag: &str) -> Vec<String> {
     let mut args = vec![
         "machine".into(),
         "create".into(),
@@ -414,7 +419,7 @@ fn create_args(machine: &config::Machine, image_tag: &str) -> Vec<String> {
         "--arch".into(),
         machine.arch().into(),
         "--home-mount".into(),
-        "none".into(),
+        if home_mount { "rw" } else { "none" }.into(),
     ];
     if machine.virtualization {
         args.push("--virtualization".into());
@@ -534,7 +539,7 @@ mod tests {
 
     #[test]
     fn create_args_default_has_no_virtualization() {
-        let args = create_args(&Machine::default(), "nbac-builder:abc");
+        let args = create_args(&Machine::default(), false, "nbac-builder:abc");
         assert!(!args.iter().any(|a| a == "--virtualization"));
         assert!(!args.iter().any(|a| a == "--kernel"));
         let arch = args.iter().position(|a| a == "--arch").unwrap();
@@ -543,12 +548,23 @@ mod tests {
     }
 
     #[test]
+    fn create_args_home_mount_is_opt_in() {
+        let mount = |home_mount| {
+            let args = create_args(&Machine::default(), home_mount, "nbac-builder:abc");
+            let flag = args.iter().position(|a| a == "--home-mount").unwrap();
+            args[flag + 1].clone()
+        };
+        assert_eq!(mount(false), "none");
+        assert_eq!(mount(true), "rw");
+    }
+
+    #[test]
     fn create_args_rosetta_selects_amd64() {
         let machine = Machine {
             rosetta: true,
             ..Machine::default()
         };
-        let args = create_args(&machine, "nbac-builder:abc");
+        let args = create_args(&machine, false, "nbac-builder:abc");
         let arch = args.iter().position(|a| a == "--arch").unwrap();
         assert_eq!(args[arch + 1], "amd64");
         assert_eq!(args.last().unwrap(), "nbac-builder:abc");
@@ -561,7 +577,7 @@ mod tests {
             kernel: Some("/nix/store/xxx-nbac-kernel".into()),
             ..Machine::default()
         };
-        let args = create_args(&machine, "nbac-builder:abc");
+        let args = create_args(&machine, false, "nbac-builder:abc");
         assert!(args.iter().any(|a| a == "--virtualization"));
         let kernel = args.iter().position(|a| a == "--kernel").unwrap();
         assert_eq!(args[kernel + 1], "/nix/store/xxx-nbac-kernel");

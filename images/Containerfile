@@ -5,6 +5,7 @@ ARG NIX_VERSION=2.35.2
 ARG NIX_SHA256=4d0302a2910f5eec1c33b8deef634f04899a75737e7001ec49908d003ae5efda
 ARG SSH_USER=builder
 ARG SSH_PORT=22
+ARG HOME_USER=
 
 RUN apk add --no-cache openssh-server s6 sudo socat iproute2 xz curl
 
@@ -24,9 +25,13 @@ RUN wget --output-document /tmp/nix.tar.xz \
     && rm -r /tmp/nix /tmp/nix.tar.xz
 
 # adduser locks the passwordless account with "!", which sshd rejects even
-# for pubkey auth; "*" means no password but not locked.
+# for pubkey auth; "*" means no password but not locked. sshd allows the
+# group rather than the user: the account the runtime injects for a mounted
+# home is named after the host user, unknown at image build time.
 RUN adduser -D -s /bin/sh "${SSH_USER}" \
-    && sed -i "s|^${SSH_USER}:!|${SSH_USER}:*|" /etc/shadow
+    && sed -i "s|^${SSH_USER}:!|${SSH_USER}:*|" /etc/shadow \
+    && addgroup -S nbac-ssh \
+    && addgroup "${SSH_USER}" nbac-ssh
 
 COPY sshd_config /etc/ssh/sshd_config
 COPY nix.conf /etc/nix/nix.conf
@@ -49,6 +54,9 @@ RUN rm /sbin/init \
     && mkdir -p /etc/nbac \
     && if [ "${TARGETARCH}" = "amd64" ]; then \
         echo "extra-platforms = x86_64-linux" >> /etc/nix/nix.conf; \
+    fi \
+    && if [ -n "${HOME_USER}" ]; then \
+        echo "trusted-users = root ${HOME_USER}" >> /etc/nix/nix.conf; \
     fi
 
 CMD ["/sbin/init"]

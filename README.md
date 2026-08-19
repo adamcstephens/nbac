@@ -62,9 +62,9 @@ first build triggers the same cold path lazily.)
 
 Useful options under `services.nbac`: `machine.{name,cpus,memory}`,
 `idle.{enable,timeoutSeconds}`, `image.{containerfile,buildContext}`,
-`stateDir`, `rosetta.enable`, `virtualization.enable`, and builder
-scheduling (`systems`, `maxJobs`, `speedFactor`, `supportedFeatures`,
-`mandatoryFeatures`, `protocol`).
+`stateDir`, `rosetta.enable`, `virtualization.enable`, `home.enable`, and
+builder scheduling (`systems`, `maxJobs`, `speedFactor`,
+`supportedFeatures`, `mandatoryFeatures`, `protocol`).
 
 ## x86_64-linux via Rosetta
 
@@ -83,6 +83,27 @@ Incompatible with `virtualization.enable` for now: `container` (as of 1.2.0)
 assumes a custom kernel matches the machine platform and cannot boot an
 amd64-platform machine with the (aarch64) KVM kernel; the module asserts
 against the combination.
+
+## Working inside the guest
+
+`services.nbac.home.enable` (default off) mounts your home directory into the
+machine read-write and makes `nbac ssh` log in as you rather than as
+`builder`. Apple `container` shares host files only as all-or-nothing on the
+home directory of the user owning the runtime, and creates a guest account
+with that user's uid/gid — which is what makes the mount usable, since the
+files carry host ownership. The guest also trusts that account as a Nix user,
+so `nix build` *inside* the machine behaves normally.
+
+This is for working in the guest — editing a checkout, running a build by
+hand. It does not change how the builder sees your files: distributed builds
+still run on the dedicated `builder` account, copy their closure into the
+guest store, and build in the sandbox, where the mount is invisible.
+
+Two notes. Toggling the option changes the image generation, so the machine
+is recreated — deleting its guest `/nix` store — with the usual warning. And
+symlinks under the mount that point outside your home dangle in the guest, so
+`~/.nix-profile` and `result` links resolve against the guest's store, not the
+host's.
 
 ## Nested virtualization
 
