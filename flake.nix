@@ -128,6 +128,7 @@
                         stateDir = "/var/lib/nbac";
                       };
                       nixpkgs.hostPlatform = "aarch64-darwin";
+                      system.primaryUser = "nbac";
                       system.stateVersion = 6;
                     }
                   ];

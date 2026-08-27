@@ -26,6 +26,10 @@ ports, no manually managed builder.
 - The guest's `/nix` store persists across stop/start. The machine is
   recreated — deleting that store — only when the image generation changes
   (Containerfile, build context, or baked-in config), with a warning.
+- Settings that only apply when the machine is created (`cpus`, `memory`,
+  `virtualization`) are picked up by a launchd agent the module installs: on
+  `darwin-rebuild switch` it deletes the machine, and the next build recreates
+  it. No `nbac reset` needed.
 
 See [docs/spec.md](docs/spec.md) for the full design and decision log.
 
@@ -65,6 +69,12 @@ Useful options under `services.nbac`: `machine.{name,cpus,memory}`,
 `stateDir`, `rosetta.enable`, `virtualization.enable`, `home.enable`, and
 builder scheduling (`systems`, `maxJobs`, `speedFactor`,
 `supportedFeatures`, `mandatoryFeatures`, `protocol`).
+
+Changing any option that reaches the machine deletes it on the next
+`darwin-rebuild switch` — the guest `/nix` store goes with it, and the next
+build repopulates it. Scheduling options (`maxJobs`, `speedFactor`,
+`supportedFeatures`, …) live entirely on the host and leave the machine
+alone.
 
 ## x86_64-linux via Rosetta
 
@@ -145,9 +155,8 @@ services.nbac.supportedFeatures = [
 
 Add that (and enough `machine.{cpus,memory}` to compile a kernel) in one
 `darwin-rebuild switch`, then set `virtualization.enable = true` and rebuild
-again; the second rebuild schedules the kernel build on the running builder.
-Toggling virtualization on an existing machine takes effect after `nbac
-reset`.
+again; the second rebuild schedules the kernel build on the running builder,
+then deletes the machine so the next build recreates it with the new kernel.
 
 ## Commands
 

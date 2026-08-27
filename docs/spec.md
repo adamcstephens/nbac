@@ -105,7 +105,7 @@ host_alias = "nbac"
 user = "adam"                                  # optional; host user with a mounted home
 
 [state]
-dir = "/Users/adam/.local/state/nbac"          # keys, known_hosts, generation marker, lock
+dir = "/Users/adam/.local/state/nbac"          # keys, known_hosts, generation marker, spec stamp, lock
 
 [idle]
 enable = true
@@ -268,11 +268,38 @@ The module:
   `nix.buildMachines` (SSH key path under `stateDir`),
 - writes the SSH client config for the host alias via
   `environment.etc."ssh/ssh_config.d/…"` (declarative data, not a script),
+- installs the `nbac-reconcile` launchd user agent (below),
 - asserts `aarch64-darwin`.
 
 It does **not** use `system.activationScripts`. After enabling the module the
 user runs `nbac setup` once (or just triggers a build and lets the cold path
 do it).
+
+### Settings reconciliation
+
+`cpus`, `memory`, `virtualization`, and `kernel` are `machine create`
+arguments, and `container` reports none of the last two for an existing
+machine, so divergence cannot be detected by inspecting it. Rather than
+track a second hash in nbac, the module installs a `launchd.user.agents`
+one-shot that deletes the machine; the existing cold path then recreates it
+from the current config on the next build.
+
+The trigger is the config's own store path. nix-darwin's
+`userLaunchdActivation` unloads and reloads an agent only when its plist
+differs (`modules/system/launchd.nix`), and the plist embeds the generated
+`config.toml` path — which changes exactly when a setting does. `RunAtLoad`
+also fires at every login, so the agent stamps that path into
+`{stateDir}/spec` and exits early when it matches; without the stamp, each
+login would delete the guest store.
+
+A user agent rather than an activation script because `container` is a
+per-user launchd service reached over XPC, and activation runs as root.
+It makes `system.primaryUser` a hard requirement of the module, which the
+`stateDir` and `home.user` defaults already assumed.
+This is the one place nbac shells out to `container` outside the Rust
+wrapper, so it forgoes the `flock` and the error taxonomy: a build that
+starts during a rebuild can have the machine deleted underneath it, and
+fails.
 
 Apple `container` is expected to be installed system-wide (Apple's signed
 pkg in `/usr/local/bin` or the Homebrew cask in `/opt/homebrew/bin`) and

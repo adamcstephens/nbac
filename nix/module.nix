@@ -306,6 +306,44 @@ in
         ProxyCommand ${lib.getExe cfg.package} --config /etc/nbac/config.toml proxy
     '';
 
+    # `container` reports neither the virtualization flag nor the kernel of an
+    # existing machine, so settings that only apply at `machine create` time
+    # cannot be reconciled by inspecting it. Deleting the machine is enough:
+    # the next build's cold path recreates it from the current config. The
+    # plist embeds the config's store path, so nix-darwin reloads the agent
+    # exactly when a setting changes; the stamp keeps the login-time
+    # RunAtLoad from deleting the guest store every time.
+    launchd.user.agents.nbac-reconcile = {
+      # Apple `container` installs outside the store, in one of its two
+      # installer locations, and agents inherit no useful PATH.
+      path = [
+        pkgs.coreutils
+        "/usr/local/bin"
+        "/opt/homebrew/bin"
+      ]
+      ++ lib.optional (cfg.containerPackage != null) cfg.containerPackage;
+
+      script = ''
+        set -e
+        stamp='${cfg.stateDir}/spec'
+        if [ "$(cat "$stamp" 2>/dev/null)" = '${configToml}' ]; then
+          exit 0
+        fi
+
+        container system start || true
+        if container machine inspect '${cfg.machine.name}' > /dev/null 2>&1; then
+          echo 'nbac settings changed; deleting machine ${cfg.machine.name} and its /nix store' >&2
+          container machine stop '${cfg.machine.name}' || true
+          container machine delete '${cfg.machine.name}'
+        fi
+
+        mkdir --parents '${cfg.stateDir}'
+        printf '%s' '${configToml}' > "$stamp"
+      '';
+
+      serviceConfig.RunAtLoad = true;
+    };
+
     nix.distributedBuilds = true;
     nix.settings.builders-use-substitutes = true;
     nix.buildMachines = [
