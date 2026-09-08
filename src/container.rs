@@ -1,5 +1,5 @@
-//! Typed wrapper around the Apple `container` CLI, pinned to one supported
-//! release series at a time.
+//! Typed wrapper around the Apple `container` CLI, with an explicit supported
+//! release range.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -10,10 +10,9 @@ use serde::de::DeserializeOwned;
 
 use crate::config;
 
-/// The `container` release series nbac supports; behavior of the CLI (argument
-/// shapes, error strings, kernel handling) shifts between minor releases, but
-/// patch releases within a series stay compatible.
-pub const SUPPORTED_SERIES: &str = "1.2";
+/// The `container` release range nbac supports. Minor releases may change CLI
+/// behavior, so compatibility is explicitly verified before extending it.
+pub const SUPPORTED_SERIES: &str = "1.2.x through 1.3.x";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -123,7 +122,7 @@ impl Runtime {
         let output = self.output(&["--version"])?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         match parse_version(&stdout) {
-            Some(found) if series(found) == SUPPORTED_SERIES => Ok(()),
+            Some(found) if supports_version(found) => Ok(()),
             found => Err(Error::UnsupportedVersion {
                 found: found.unwrap_or(stdout.trim()).to_string(),
             }),
@@ -472,7 +471,18 @@ fn parse_version(stdout: &str) -> Option<&str> {
     tokens.next()
 }
 
-/// The major.minor prefix of a version, which is what compatibility turns on.
+/// Whether a version belongs to a supported major/minor release range.
+fn supports_version(version: &str) -> bool {
+    let Some((major, minor)) = series(version).split_once('.') else {
+        return false;
+    };
+    matches!(
+        (major.parse::<u8>(), minor.parse::<u8>()),
+        (Ok(1), Ok(2..=3))
+    )
+}
+
+/// The major.minor prefix of a version.
 fn series(version: &str) -> &str {
     match version.match_indices('.').nth(1) {
         Some((dot, _)) => &version[..dot],
@@ -518,11 +528,14 @@ mod tests {
     }
 
     #[test]
-    fn series_matches_patch_releases_only() {
-        assert_eq!(series("1.2.0"), SUPPORTED_SERIES);
-        assert_eq!(series("1.2.1"), SUPPORTED_SERIES);
-        assert_ne!(series("1.3.0"), SUPPORTED_SERIES);
-        assert_ne!(series("1.20.0"), SUPPORTED_SERIES);
+    fn supports_container_1_2_x_through_1_3_x() {
+        assert!(supports_version("1.2.0"));
+        assert!(supports_version("1.2.1"));
+        assert!(supports_version("1.3.0"));
+        assert!(supports_version("1.3.1"));
+        assert!(!supports_version("1.1.9"));
+        assert!(!supports_version("1.4.0"));
+        assert!(!supports_version("1.20.0"));
     }
 
     #[test]
