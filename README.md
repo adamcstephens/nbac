@@ -212,6 +212,7 @@ key injection can restart, a supervised `nix-daemon`, the watchdog).
 ```sh
 nix develop        # rust toolchain, just, nixfmt
 nix flake check    # build, clippy, rustfmt/nixfmt, module eval
+cargo test --test container_service -- --ignored  # live container-service E2E test
 ```
 
 Inspired by [nix-hex-box](https://github.com/robertderose/nix-hex-box); the
