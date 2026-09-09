@@ -38,7 +38,7 @@ See [docs/spec.md](docs/spec.md) for the full design and decision log.
 - An Apple silicon Mac (`aarch64-darwin`) running
   [nix-darwin](https://github.com/nix-darwin/nix-darwin).
 - Apple's [`container`](https://github.com/apple/container) 1.2.x through
-  1.3.x, installed system-wide (Apple's signed pkg or the Homebrew cask) and
+  1.4.x, installed system-wide (Apple's signed pkg or the Homebrew cask) and
   on `PATH`.
 
 ## Setup

@@ -12,7 +12,7 @@ use crate::config;
 
 /// The `container` release range nbac supports. Minor releases may change CLI
 /// behavior, so compatibility is explicitly verified before extending it.
-pub const SUPPORTED_SERIES: &str = "1.2.x through 1.3.x";
+pub const SUPPORTED_SERIES: &str = "1.2.x through 1.4.x";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -21,7 +21,7 @@ pub enum Error {
         binary: String,
         source: std::io::Error,
     },
-    #[error("unsupported `container` version {found}; nbac supports {SUPPORTED_SERIES}.x")]
+    #[error("unsupported `container` version {found}; nbac supports {SUPPORTED_SERIES}")]
     UnsupportedVersion { found: String },
     #[error("container services are not running: {stderr}")]
     RuntimeDown { stderr: String },
@@ -478,7 +478,7 @@ fn supports_version(version: &str) -> bool {
     };
     matches!(
         (major.parse::<u8>(), minor.parse::<u8>()),
-        (Ok(1), Ok(2..=3))
+        (Ok(1), Ok(2..=4))
     )
 }
 
@@ -528,13 +528,15 @@ mod tests {
     }
 
     #[test]
-    fn supports_container_1_2_x_through_1_3_x() {
+    fn supports_container_1_2_x_through_1_4_x() {
         assert!(supports_version("1.2.0"));
         assert!(supports_version("1.2.1"));
         assert!(supports_version("1.3.0"));
         assert!(supports_version("1.3.1"));
+        assert!(supports_version("1.4.0"));
+        assert!(supports_version("1.4.1"));
         assert!(!supports_version("1.1.9"));
-        assert!(!supports_version("1.4.0"));
+        assert!(!supports_version("1.5.0"));
         assert!(!supports_version("1.20.0"));
     }
 

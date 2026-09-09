@@ -115,7 +115,7 @@ fn setup_and_ssh_build_work_against_container_service() {
             "daemon",
             "--no-link",
             "--expr",
-            r#"derivation { name = "nbac-e2e"; system = "aarch64-linux"; builder = "/bin/sh"; args = [ "-c" "echo ok > $out" ]; }"#,
+            r#"'derivation { name = "nbac-e2e"; system = "aarch64-linux"; builder = "/bin/sh"; args = [ "-c" "echo ok > $out" ]; }'"#,
         ])
         .output()
         .unwrap();
