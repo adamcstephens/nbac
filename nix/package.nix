@@ -1,25 +1,18 @@
 {
+  craneLib,
   manifest,
-  lib,
-  rustPlatform,
 }:
 
-rustPlatform.buildRustPackage {
+craneLib.buildPackage rec {
   pname = manifest.package.name;
   inherit (manifest.package) version;
 
-  src =
-    with lib.fileset;
-    toSource {
-      root = ../.;
-      fileset = unions [
-        ../Cargo.toml
-        ../Cargo.lock
-        ../src
-      ];
-    };
+  src = craneLib.cleanCargoSource ../.;
+  strictDeps = true;
 
-  cargoLock.lockFile = ../Cargo.lock;
+  cargoArtifacts = craneLib.buildDepsOnly {
+    inherit src strictDeps;
+  };
 
   meta.mainProgram = "nbac";
 }

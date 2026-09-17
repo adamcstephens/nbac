@@ -4,10 +4,10 @@
 
     flake-parts.url = "github:hercules-ci/flake-parts";
 
-    nix-darwin = {
-      url = "github:nix-darwin/nix-darwin";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    crane.url = "github:ipetkov/crane";
+
+    nix-darwin.url = "github:nix-darwin/nix-darwin";
+    nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -39,6 +39,7 @@
           ...
         }:
         let
+          craneLib = inputs.crane.mkLib pkgs;
           manifest = lib.importTOML ./Cargo.toml;
           bump-nix = pkgs.callPackage ./nix/bump-nix.nix { };
         in
@@ -68,7 +69,7 @@
             };
 
             nbac-unwrapped = pkgs.callPackage ./nix/package.nix {
-              inherit manifest;
+              inherit craneLib manifest;
             };
           }
           // lib.optionalAttrs (system == "aarch64-linux") {
