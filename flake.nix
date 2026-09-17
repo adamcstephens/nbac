@@ -8,14 +8,6 @@
       url = "github:nix-darwin/nix-darwin";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    drowse = {
-      url = "github:figsoda/drowse";
-      inputs = {
-        flake-parts.follows = "flake-parts";
-        nixpkgs.follows = "nixpkgs";
-      };
-    };
   };
 
   outputs =
@@ -77,7 +69,6 @@
 
             nbac-unwrapped = pkgs.callPackage ./nix/package.nix {
               inherit manifest;
-              inherit (inputs) drowse;
             };
           }
           // lib.optionalAttrs (system == "aarch64-linux") {
