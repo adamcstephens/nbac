@@ -22,11 +22,11 @@ let
       kernel = toString cfg.virtualization.kernelPackage;
     };
     image = {
-      containerfile = toString cfg.image.containerfile;
+      containerfile = "${cfg.image.containerfile}";
       packages = map installable cfg.image.packages;
     }
     // lib.optionalAttrs (cfg.image.buildContext != null) {
-      build_context = toString cfg.image.buildContext;
+      build_context = "${cfg.image.buildContext}";
     };
     ssh = {
       inherit (cfg.ssh) user port;

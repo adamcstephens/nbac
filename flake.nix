@@ -88,6 +88,7 @@
                 runHook postBuild
               '';
               doCheck = false;
+              doNotPostBuildInstallCargoBinaries = true;
               installPhase = "touch $out";
               doInstallCheck = false;
             });
@@ -126,9 +127,32 @@
                   ];
                 };
               in
-              pkgs.runCommand "nbac-module-eval" {
-                toplevel = builtins.unsafeDiscardStringContext darwin.config.system.build.toplevel.drvPath;
-              } "echo $toplevel > $out";
+              pkgs.runCommand "nbac-module-eval"
+                {
+                  toplevel = builtins.unsafeDiscardStringContext darwin.config.system.build.toplevel.drvPath;
+                  configFile = darwin.config.environment.etc."nbac/config.toml".source;
+                  closure = pkgs.closureInfo {
+                    rootPaths = [ darwin.config.environment.etc."nbac/config.toml".source ];
+                  };
+                  nativeBuildInputs = [ pkgs.python3 ];
+                }
+                ''
+                  python3 - <<'PY'
+                  import os
+                  from pathlib import Path
+                  import tomllib
+
+                  with open(os.environ["configFile"], "rb") as source:
+                      image = tomllib.load(source)["image"]
+                  closure = (Path(os.environ["closure"]) / "store-paths").read_text().splitlines()
+                  for key in ("containerfile", "build_context"):
+                      path = Path(image[key])
+                      store_path = str(Path(*path.parts[:4]))
+                      assert store_path in closure, f"{key} is missing from the runtime closure: {path}"
+                      assert path.exists(), f"{key} does not exist: {path}"
+                  PY
+                  echo "$toplevel" > "$out"
+                '';
           };
         };
     };
