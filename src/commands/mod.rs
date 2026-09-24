@@ -161,18 +161,22 @@ pub fn cmd_proxy(config_path: &Path) -> Result<()> {
         None => {
             let ip = ensure_ready(&runtime, &config)?.guest_ip;
             if !transport::await_reachable(&ip, config.ssh.port) {
-                bail!(
-                    "guest {ip}:{} is unreachable from the host although sshd is up; \
-                     the vmnet dataplane may be wedged (try `container system stop`, \
-                     then reconnect)",
-                    config.ssh.port
-                );
+                bail!("{}", unreachable_message(&ip, config.ssh.port));
             }
             ip
         }
     };
     let err = transport::exec(&ip, config.ssh.port);
     Err(anyhow::Error::new(err).context("cannot exec the transport"))
+}
+
+fn unreachable_message(ip: &str, port: u16) -> String {
+    format!(
+        "guest {ip}:{port} is unreachable from the invoking user although sshd is up; \
+         local network access may be denied (grant it to the terminal that launched nbac). \
+         If that is already granted, the vmnet dataplane may be wedged \
+         (try `container system stop`, then reconnect)"
+    )
 }
 
 /// One inspect, no lock, no polling: a running machine whose image matches
@@ -185,4 +189,20 @@ fn fast_path_ip(runtime: &Runtime, config: &Config) -> Option<String> {
     (info.status == MachineStatus::Running
         && machine::reference_matches(&info.image.reference, &tag))
     .then_some(info.ip_address)?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unreachable_message;
+
+    #[test]
+    fn unreachable_message_prioritizes_local_network_access() {
+        assert_eq!(
+            unreachable_message("192.168.65.6", 22),
+            "guest 192.168.65.6:22 is unreachable from the invoking user although sshd is up; \
+             local network access may be denied (grant it to the terminal that launched nbac). \
+             If that is already granted, the vmnet dataplane may be wedged \
+             (try `container system stop`, then reconnect)"
+        );
+    }
 }
