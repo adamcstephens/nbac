@@ -19,3 +19,6 @@ test *args:
 
 bump-nix:
     nix run .#bump-nix
+
+update:
+    cargo update --verbose
