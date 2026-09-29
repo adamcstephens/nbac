@@ -1,5 +1,5 @@
 //! Typed wrapper around the Apple `container` CLI, with an explicit supported
-//! release range.
+//! minimum release.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -10,9 +10,7 @@ use serde::de::DeserializeOwned;
 
 use crate::config;
 
-/// The `container` release range nbac supports. Minor releases may change CLI
-/// behavior, so compatibility is explicitly verified before extending it.
-pub const SUPPORTED_SERIES: &str = "1.2.x through 1.4.x";
+pub const SUPPORTED_SERIES: &str = "1.2.0 or newer";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -471,14 +469,13 @@ fn parse_version(stdout: &str) -> Option<&str> {
     tokens.next()
 }
 
-/// Whether a version belongs to a supported major/minor release range.
 fn supports_version(version: &str) -> bool {
     let Some((major, minor)) = series(version).split_once('.') else {
         return false;
     };
     matches!(
-        (major.parse::<u8>(), minor.parse::<u8>()),
-        (Ok(1), Ok(2..=4))
+        (major.parse::<u64>(), minor.parse::<u64>()),
+        (Ok(major), Ok(minor)) if (major, minor) >= (1, 2)
     )
 }
 
@@ -528,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn supports_container_1_2_x_through_1_4_x() {
+    fn supports_container_1_2_and_newer() {
         assert!(supports_version("1.2.0"));
         assert!(supports_version("1.2.1"));
         assert!(supports_version("1.3.0"));
@@ -536,8 +533,10 @@ mod tests {
         assert!(supports_version("1.4.0"));
         assert!(supports_version("1.4.1"));
         assert!(!supports_version("1.1.9"));
-        assert!(!supports_version("1.5.0"));
-        assert!(!supports_version("1.20.0"));
+        assert!(supports_version("1.5.0"));
+        assert!(supports_version("1.20.0"));
+        assert!(supports_version("2.0.0"));
+        assert!(!supports_version("0.9.0"));
     }
 
     #[test]
